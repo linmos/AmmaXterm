@@ -27,3 +27,14 @@ russh = { version = "0.61.2", default-features = false, features = ["ring", "rsa
 russh-sftp = "2.3.0"
 thiserror = "2.0.18"
 base64 = "0.22"
+uuid = { version = "1.23.3", features = ["v4"] }
+
+# OS keychain — per-platform native backends (AK-1).
+[target.'cfg(windows)'.dependencies]
+keyring = { version = "3", features = ["windows-native"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+keyring = { version = "3", features = ["apple-native"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+keyring = { version = "3", features = ["sync-secret-service"] }

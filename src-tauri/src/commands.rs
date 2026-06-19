@@ -1,4 +1,4 @@
-//! Tauri command surface for SSH sessions and SFTP.
+//! Tauri command surface for SSH sessions, SFTP, saved sites, and secrets.
 
 use std::fs;
 
@@ -6,12 +6,26 @@ use tauri::ipc::Channel;
 use tauri::{AppHandle, Manager, State};
 
 use crate::error::{AppError, AppResult};
+use crate::secrets::{self, SecretKind};
 use crate::session::SessionManager;
 use crate::sftp::FileEntry;
 use crate::ssh::ConnectOptions;
+use crate::store::{AuthMethod, Site, SiteInput, SiteStore};
 
-/// Open an SSH session. `on_output` is a Tauri channel the backend streams
-/// base64-encoded shell output through; returns the new session id.
+/// Resolve (and ensure) the app config directory.
+fn config_dir(app: &AppHandle) -> AppResult<std::path::PathBuf> {
+    let dir = app
+        .path()
+        .app_config_dir()
+        .map_err(|e| AppError::Other(format!("cannot resolve app config dir: {e}")))?;
+    let _ = fs::create_dir_all(&dir);
+    Ok(dir)
+}
+
+// --- SSH sessions ---
+
+/// Open an SSH session from ad-hoc options (Quick Connect). `on_output` is a
+/// Tauri channel the backend streams base64-encoded shell output through.
 #[tauri::command]
 pub async fn ssh_connect(
     app: AppHandle,
@@ -19,14 +33,43 @@ pub async fn ssh_connect(
     on_output: Channel<String>,
     manager: State<'_, SessionManager>,
 ) -> AppResult<String> {
-    // App-private known_hosts (OpenSSH format) under the app config dir.
-    let config_dir = app
-        .path()
-        .app_config_dir()
-        .map_err(|e| AppError::Other(format!("cannot resolve app config dir: {e}")))?;
-    let _ = fs::create_dir_all(&config_dir);
-    let known_hosts = config_dir.join("known_hosts");
+    let known_hosts = config_dir(&app)?.join("known_hosts");
+    manager.connect(options, known_hosts, on_output).await
+}
 
+/// Open an SSH session from a saved site, resolving its secret from the keychain.
+#[tauri::command]
+pub async fn site_connect(
+    app: AppHandle,
+    site_id: String,
+    cols: u32,
+    rows: u32,
+    on_output: Channel<String>,
+    store: State<'_, SiteStore>,
+    manager: State<'_, SessionManager>,
+) -> AppResult<String> {
+    let site = store.get(&site_id)?;
+    let known_hosts = config_dir(&app)?.join("known_hosts");
+
+    let password = match site.auth {
+        AuthMethod::Password => secrets::get(SecretKind::Password, &site_id)?
+            .ok_or_else(|| AppError::Auth("no saved password for this site".into()))?,
+        // Public-key and keyboard-interactive land in M1 task 14 (TM-2).
+        _ => {
+            return Err(AppError::Other(
+                "this authentication method is not implemented yet".into(),
+            ))
+        }
+    };
+
+    let options = ConnectOptions {
+        host: site.host,
+        port: site.port,
+        username: site.username,
+        password,
+        cols,
+        rows,
+    };
     manager.connect(options, known_hosts, on_output).await
 }
 
@@ -56,6 +99,8 @@ pub async fn ssh_resize(
 pub async fn ssh_disconnect(id: String, manager: State<'_, SessionManager>) -> AppResult<()> {
     manager.disconnect(&id).await
 }
+
+// --- SFTP ---
 
 /// List a remote directory over SFTP (FT-1).
 #[tauri::command]
@@ -90,4 +135,46 @@ pub async fn sftp_download(
 ) -> AppResult<()> {
     let handle = manager.handle(&id)?;
     crate::sftp::download(&handle, &remote_path, &local_path).await
+}
+
+// --- Saved sites (SM-1) ---
+
+/// List all saved sites.
+#[tauri::command]
+pub fn site_list(store: State<'_, SiteStore>) -> Vec<Site> {
+    store.list()
+}
+
+/// Create a new site; returns it with its assigned id.
+#[tauri::command]
+pub fn site_add(input: SiteInput, store: State<'_, SiteStore>) -> AppResult<Site> {
+    store.add(input)
+}
+
+/// Update an existing site.
+#[tauri::command]
+pub fn site_update(id: String, input: SiteInput, store: State<'_, SiteStore>) -> AppResult<Site> {
+    store.update(&id, input)
+}
+
+/// Delete a site and its stored secrets.
+#[tauri::command]
+pub fn site_delete(id: String, store: State<'_, SiteStore>) -> AppResult<()> {
+    store.delete(&id)?;
+    let _ = secrets::delete_all(&id);
+    Ok(())
+}
+
+// --- Secrets (AK-1) ---
+
+/// Store/replace a site's password in the OS keychain.
+#[tauri::command]
+pub fn site_set_password(site_id: String, password: String) -> AppResult<()> {
+    secrets::set(SecretKind::Password, &site_id, &password)
+}
+
+/// Store/replace a site's private-key passphrase in the OS keychain.
+#[tauri::command]
+pub fn site_set_passphrase(site_id: String, passphrase: String) -> AppResult<()> {
+    secrets::set(SecretKind::Passphrase, &site_id, &passphrase)
 }
