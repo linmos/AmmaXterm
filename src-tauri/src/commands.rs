@@ -362,6 +362,38 @@ pub fn import_ssh_config(path: Option<String>) -> AppResult<Vec<ImportedSite>> {
     Ok(importer::parse_openssh_config(&text))
 }
 
+/// Read a text file, decoding a UTF-16LE or UTF-8 BOM if present. `regedit`
+/// exports `.reg` files as UTF-16LE, so PuTTY imports need this rather than the
+/// strict UTF-8 `fs::read_to_string`.
+fn read_text_loose(path: &std::path::Path) -> AppResult<String> {
+    let bytes = fs::read(path)
+        .map_err(|e| AppError::Other(format!("cannot read {}: {e}", path.display())))?;
+    if bytes.len() >= 2 && bytes[0] == 0xFF && bytes[1] == 0xFE {
+        let units: Vec<u16> = bytes[2..]
+            .chunks_exact(2)
+            .map(|c| u16::from_le_bytes([c[0], c[1]]))
+            .collect();
+        Ok(String::from_utf16_lossy(&units))
+    } else if bytes.len() >= 3 && bytes[0] == 0xEF && bytes[1] == 0xBB && bytes[2] == 0xBF {
+        Ok(String::from_utf8_lossy(&bytes[3..]).into_owned())
+    } else {
+        Ok(String::from_utf8_lossy(&bytes).into_owned())
+    }
+}
+
+/// Read saved PuTTY sessions directly from the Windows registry (SM-7).
+#[tauri::command]
+pub fn import_putty_registry() -> AppResult<Vec<ImportedSite>> {
+    importer::read_putty_registry()
+}
+
+/// Parse a `regedit` `.reg` export of PuTTY sessions into review candidates (SM-7).
+#[tauri::command]
+pub fn import_putty_reg(path: String) -> AppResult<Vec<ImportedSite>> {
+    let text = read_text_loose(std::path::Path::new(&path))?;
+    Ok(importer::parse_putty_reg(&text))
+}
+
 /// Read an AmmaXterm backup file into review candidates (SM-8 restore).
 #[tauri::command]
 pub fn import_sites_backup(path: String) -> AppResult<Vec<ImportedSite>> {

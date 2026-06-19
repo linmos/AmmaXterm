@@ -122,6 +122,222 @@ pub fn parse_openssh_config(text: &str) -> Vec<ImportedSite> {
     out
 }
 
+// --- PuTTY session import ---
+//
+// PuTTY stores each saved session under the registry path
+// `HKCU\Software\SimonTatham\PuTTY\Sessions\<name>`, where `<name>` is
+// percent-encoded. The same data is recoverable from a `regedit` `.reg` export,
+// which is what `parse_putty_reg` reads (pure + testable); `read_putty_registry`
+// reads the live registry on Windows.
+
+/// Decode PuTTY's `%XX` percent-encoding used in registry session key names
+/// (e.g. spaces stored as `%20`). Unknown/short sequences are kept verbatim.
+fn unescape_putty_name(s: &str) -> String {
+    let bytes = s.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' && i + 2 < bytes.len() {
+            let hi = (bytes[i + 1] as char).to_digit(16);
+            let lo = (bytes[i + 2] as char).to_digit(16);
+            if let (Some(h), Some(l)) = (hi, lo) {
+                out.push((h * 16 + l) as u8);
+                i += 3;
+                continue;
+            }
+        }
+        out.push(bytes[i]);
+        i += 1;
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
+/// Build a PuTTY-derived candidate, or `None` when it isn't a connectable SSH
+/// session (no host, or a non-SSH protocol like telnet/serial).
+fn putty_site(
+    name: String,
+    host: String,
+    port: u16,
+    username: String,
+    keyfile: String,
+    protocol: &str,
+) -> Option<ImportedSite> {
+    if host.trim().is_empty() {
+        return None; // "Default Settings" and the like carry no host
+    }
+    if !protocol.is_empty() && !protocol.eq_ignore_ascii_case("ssh") {
+        return None; // telnet / serial / rlogin sessions are not importable here
+    }
+    let auth = if keyfile.is_empty() {
+        AuthMethod::Password
+    } else {
+        AuthMethod::PublicKey { key_path: keyfile }
+    };
+    Some(ImportedSite {
+        name,
+        host,
+        port: if port == 0 { 22 } else { port },
+        username,
+        auth,
+        group: Some("putty".to_string()),
+        tags: vec!["imported".to_string()],
+    })
+}
+
+#[derive(Default)]
+struct PuttyBlock {
+    name: String,
+    hostname: String,
+    port: u16,
+    username: String,
+    protocol: String,
+    keyfile: String,
+}
+
+impl PuttyBlock {
+    fn finish(self, out: &mut Vec<ImportedSite>) {
+        if let Some(site) = putty_site(
+            self.name,
+            self.hostname,
+            self.port,
+            self.username,
+            self.keyfile,
+            &self.protocol,
+        ) {
+            out.push(site);
+        }
+    }
+}
+
+/// Parse a `.reg` export (`"Key"="val"` / `"Key"=dword:hhhhhhhh`) on the current
+/// block, returning the lowercased key and a raw value token.
+fn parse_reg_line(line: &str) -> Option<(String, &str)> {
+    let line = line.trim();
+    if !line.starts_with('"') {
+        return None;
+    }
+    let rest = &line[1..];
+    let end = rest.find('"')?;
+    let key = rest[..end].to_ascii_lowercase();
+    let after = rest[end + 1..].trim_start();
+    let value = after.strip_prefix('=')?.trim();
+    Some((key, value))
+}
+
+/// Decode a `.reg` string value: strips the surrounding quotes and unescapes
+/// `\\` and `\"`. Non-string tokens yield `None`.
+fn reg_string(token: &str) -> Option<String> {
+    let inner = token.strip_prefix('"')?.strip_suffix('"')?;
+    let mut out = String::with_capacity(inner.len());
+    let mut chars = inner.chars();
+    while let Some(c) = chars.next() {
+        if c == '\\' {
+            match chars.next() {
+                Some('\\') => out.push('\\'),
+                Some('"') => out.push('"'),
+                Some(other) => out.push(other),
+                None => {}
+            }
+        } else {
+            out.push(c);
+        }
+    }
+    Some(out)
+}
+
+/// Decode a `.reg` `dword:hhhhhhhh` value.
+fn reg_dword(token: &str) -> Option<u32> {
+    let hex = token.strip_prefix("dword:")?;
+    u32::from_str_radix(hex.trim(), 16).ok()
+}
+
+/// Parse a Windows `.reg` export of PuTTY sessions into candidates (SM-7).
+pub fn parse_putty_reg(text: &str) -> Vec<ImportedSite> {
+    let mut out = Vec::new();
+    let mut cur: Option<PuttyBlock> = None;
+
+    for raw in text.lines() {
+        let line = raw.trim();
+        if line.starts_with('[') {
+            if let Some(block) = cur.take() {
+                block.finish(&mut out);
+            }
+            let inner = line.trim_start_matches('[').trim_end_matches(']');
+            // Only `…\Sessions\<name>` keys are sessions.
+            cur = inner.rfind("\\Sessions\\").and_then(|idx| {
+                let name = unescape_putty_name(&inner[idx + "\\Sessions\\".len()..]);
+                (!name.is_empty()).then(|| PuttyBlock {
+                    name,
+                    ..Default::default()
+                })
+            });
+        } else if let Some(block) = cur.as_mut() {
+            let Some((key, value)) = parse_reg_line(line) else {
+                continue;
+            };
+            match key.as_str() {
+                "hostname" => block.hostname = reg_string(value).unwrap_or_default(),
+                "portnumber" => block.port = reg_dword(value).unwrap_or(0) as u16,
+                "username" => block.username = reg_string(value).unwrap_or_default(),
+                "protocol" => block.protocol = reg_string(value).unwrap_or_default(),
+                "publickeyfile" => block.keyfile = reg_string(value).unwrap_or_default(),
+                _ => {}
+            }
+        }
+    }
+    if let Some(block) = cur.take() {
+        block.finish(&mut out);
+    }
+    out.sort_by_key(|s| s.name.to_lowercase());
+    out
+}
+
+/// Read PuTTY sessions directly from the Windows registry (SM-7). Returns an
+/// empty list when PuTTY isn't installed / has no saved sessions.
+#[cfg(windows)]
+pub fn read_putty_registry() -> AppResult<Vec<ImportedSite>> {
+    use winreg::enums::HKEY_CURRENT_USER;
+    use winreg::RegKey;
+
+    let hkcu = RegKey::predef(HKEY_CURRENT_USER);
+    let sessions = match hkcu.open_subkey("Software\\SimonTatham\\PuTTY\\Sessions") {
+        Ok(k) => k,
+        Err(_) => return Ok(Vec::new()),
+    };
+
+    let mut out = Vec::new();
+    for raw_name in sessions.enum_keys().flatten() {
+        let Ok(key) = sessions.open_subkey(&raw_name) else {
+            continue;
+        };
+        let protocol: String = key.get_value("Protocol").unwrap_or_default();
+        let hostname: String = key.get_value("HostName").unwrap_or_default();
+        let port: u32 = key.get_value("PortNumber").unwrap_or(22);
+        let username: String = key.get_value("UserName").unwrap_or_default();
+        let keyfile: String = key.get_value("PublicKeyFile").unwrap_or_default();
+        if let Some(site) = putty_site(
+            unescape_putty_name(&raw_name),
+            hostname,
+            port as u16,
+            username,
+            keyfile,
+            &protocol,
+        ) {
+            out.push(site);
+        }
+    }
+    out.sort_by_key(|s| s.name.to_lowercase());
+    Ok(out)
+}
+
+/// Non-Windows builds have no PuTTY registry; reading one is unsupported.
+#[cfg(not(windows))]
+pub fn read_putty_registry() -> AppResult<Vec<ImportedSite>> {
+    Err(AppError::Other(
+        "PuTTY registry import is only available on Windows".into(),
+    ))
+}
+
 /// Shape of an AmmaXterm `sites.json` / backup file (read-only, lenient).
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -212,5 +428,51 @@ Host db
         let sites = parse_openssh_config("Host x\n  HostName=1.2.3.4\n  Port=22\n");
         assert_eq!(sites.len(), 1);
         assert_eq!(sites[0].host, "1.2.3.4");
+    }
+
+    #[test]
+    fn parses_putty_reg_export() {
+        let reg = "\
+Windows Registry Editor Version 5.00
+
+[HKEY_CURRENT_USER\\Software\\SimonTatham\\PuTTY\\Sessions\\Prod%20Web]
+\"HostName\"=\"10.0.0.5\"
+\"PortNumber\"=dword:00000016
+\"UserName\"=\"deploy\"
+\"Protocol\"=\"ssh\"
+\"PublicKeyFile\"=\"C:\\\\keys\\\\id.ppk\"
+
+[HKEY_CURRENT_USER\\Software\\SimonTatham\\PuTTY\\Sessions\\Default%20Settings]
+\"HostName\"=\"\"
+\"Protocol\"=\"ssh\"
+
+[HKEY_CURRENT_USER\\Software\\SimonTatham\\PuTTY\\Sessions\\serial-box]
+\"HostName\"=\"COM3\"
+\"Protocol\"=\"serial\"
+
+[HKEY_CURRENT_USER\\Software\\SimonTatham\\PuTTY\\Sessions\\db]
+\"HostName\"=\"db.internal\"
+\"Protocol\"=\"ssh\"
+";
+        let sites = parse_putty_reg(reg);
+        // "Prod Web" + "db"; "Default Settings" (no host) and serial are skipped.
+        assert_eq!(sites.len(), 2);
+
+        // Sorted by name: "db" before "Prod Web".
+        let db = &sites[0];
+        assert_eq!(db.name, "db");
+        assert_eq!(db.host, "db.internal");
+        assert_eq!(db.port, 22);
+        assert!(matches!(db.auth, AuthMethod::Password));
+
+        let web = &sites[1];
+        assert_eq!(web.name, "Prod Web"); // %20 decoded
+        assert_eq!(web.host, "10.0.0.5");
+        assert_eq!(web.port, 22); // 0x16
+        assert_eq!(web.username, "deploy");
+        match &web.auth {
+            AuthMethod::PublicKey { key_path } => assert_eq!(key_path, "C:\\keys\\id.ppk"),
+            _ => panic!("expected public-key auth from PublicKeyFile"),
+        }
     }
 }
