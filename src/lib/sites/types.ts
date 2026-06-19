@@ -27,3 +27,14 @@ export interface SiteInput {
 	group?: string | null;
 	tags?: string[];
 }
+
+/** A connection candidate from an import source (mirrors Rust `ImportedSite`). */
+export interface ImportedSite {
+	name: string;
+	host: string;
+	port: number;
+	username: string;
+	auth: AuthMethod;
+	group: string | null;
+	tags: string[];
+}

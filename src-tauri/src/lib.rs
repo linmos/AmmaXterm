@@ -1,5 +1,6 @@
 mod commands;
 mod error;
+mod importer;
 mod secrets;
 mod session;
 mod sftp;
@@ -42,6 +43,9 @@ pub fn run() {
             commands::site_delete,
             commands::site_set_password,
             commands::site_set_passphrase,
+            commands::import_ssh_config,
+            commands::import_sites_backup,
+            commands::export_sites,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

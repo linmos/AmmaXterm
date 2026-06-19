@@ -6,6 +6,7 @@ use tauri::ipc::Channel;
 use tauri::{AppHandle, Manager, State};
 
 use crate::error::{AppError, AppResult};
+use crate::importer::{self, ImportedSite};
 use crate::secrets::{self, SecretKind};
 use crate::session::SessionManager;
 use crate::sftp::FileEntry;
@@ -234,4 +235,43 @@ pub fn site_set_password(site_id: String, password: String) -> AppResult<()> {
 #[tauri::command]
 pub fn site_set_passphrase(site_id: String, passphrase: String) -> AppResult<()> {
     secrets::set(SecretKind::Passphrase, &site_id, &passphrase)
+}
+
+// --- Import / export (SM-7, SM-8) ---
+
+/// Resolve the user's home directory across platforms.
+fn home_dir() -> Option<std::path::PathBuf> {
+    std::env::var_os("USERPROFILE")
+        .or_else(|| std::env::var_os("HOME"))
+        .map(std::path::PathBuf::from)
+}
+
+/// Parse an OpenSSH `config` file into review candidates (SM-7). When `path` is
+/// omitted, the default `~/.ssh/config` is used.
+#[tauri::command]
+pub fn import_ssh_config(path: Option<String>) -> AppResult<Vec<ImportedSite>> {
+    let path = match path {
+        Some(p) => std::path::PathBuf::from(p),
+        None => home_dir()
+            .ok_or_else(|| AppError::Other("cannot resolve home directory".into()))?
+            .join(".ssh")
+            .join("config"),
+    };
+    let text = fs::read_to_string(&path)
+        .map_err(|e| AppError::Other(format!("cannot read {}: {e}", path.display())))?;
+    Ok(importer::parse_openssh_config(&text))
+}
+
+/// Read an AmmaXterm backup file into review candidates (SM-8 restore).
+#[tauri::command]
+pub fn import_sites_backup(path: String) -> AppResult<Vec<ImportedSite>> {
+    let text = fs::read_to_string(&path)
+        .map_err(|e| AppError::Other(format!("cannot read {path}: {e}")))?;
+    importer::read_backup(&text)
+}
+
+/// Export all saved sites to a backup file (SM-8). No secrets are written.
+#[tauri::command]
+pub fn export_sites(path: String, store: State<'_, SiteStore>) -> AppResult<()> {
+    store.export_to(std::path::Path::new(&path))
 }

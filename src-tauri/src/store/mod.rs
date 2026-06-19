@@ -170,6 +170,19 @@ impl SiteStore {
         Ok(updated)
     }
 
+    /// Write the current sites to `path` as a backup file (SM-8). Secrets are
+    /// never part of `Site`, so the export carries no credentials.
+    pub fn export_to(&self, path: &std::path::Path) -> AppResult<()> {
+        let file = SitesFile {
+            schema_version: SCHEMA_VERSION,
+            sites: self.list(),
+        };
+        let json = serde_json::to_string_pretty(&file)
+            .map_err(|e| AppError::Other(format!("serialize sites: {e}")))?;
+        std::fs::write(path, json)?;
+        Ok(())
+    }
+
     pub fn delete(&self, id: &str) -> AppResult<()> {
         let mut guard = self.sites.lock().unwrap();
         let idx = guard

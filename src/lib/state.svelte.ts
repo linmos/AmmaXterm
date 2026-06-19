@@ -1,6 +1,6 @@
 import { invoke, Channel } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
-import type { Site, SiteInput } from './sites/types';
+import type { ImportedSite, Site, SiteInput } from './sites/types';
 import type { TerminalApi, TerminalSize } from './terminal/types';
 
 export type TabStatus = 'connecting' | 'connected' | 'closed' | 'error';
@@ -91,6 +91,56 @@ class AppState {
 	async deleteSite(id: string): Promise<void> {
 		await invoke('site_delete', { id });
 		await this.loadSites();
+	}
+
+	// --- import / export (SM-7, SM-8) ---
+
+	/** Parse an OpenSSH config into review candidates (default ~/.ssh/config). */
+	async importSshConfig(path?: string): Promise<ImportedSite[]> {
+		return invoke<ImportedSite[]>('import_ssh_config', { path: path ?? null });
+	}
+
+	/** Read an AmmaXterm backup file into review candidates. */
+	async importBackup(path: string): Promise<ImportedSite[]> {
+		return invoke<ImportedSite[]>('import_sites_backup', { path });
+	}
+
+	/** Write all saved sites to a backup file (no secrets). */
+	async exportSites(path: string): Promise<void> {
+		await invoke('export_sites', { path });
+	}
+
+	/** Persist a batch of imported candidates as new sites, then reload. */
+	async addImported(entries: ImportedSite[]): Promise<void> {
+		for (const e of entries) {
+			const input: SiteInput = {
+				name: e.name,
+				host: e.host,
+				port: e.port,
+				username: e.username,
+				auth: e.auth,
+				group: e.group,
+				tags: e.tags
+			};
+			await invoke<Site>('site_add', { input });
+		}
+		await this.loadSites();
+	}
+
+	/** Move a site into a group (or out of all groups when `group` is null).
+	 *  Rewrites the site record only — the stored secret is untouched. */
+	async moveSiteToGroup(site: Site, group: string | null): Promise<void> {
+		if ((site.group ?? null) === group) return;
+		const input: SiteInput = {
+			name: site.name,
+			host: site.host,
+			port: site.port,
+			username: site.username,
+			auth: site.auth,
+			group,
+			tags: site.tags
+		};
+		await this.updateSite(site.id, input);
 	}
 
 	// --- tabs / sessions ---

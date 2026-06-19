@@ -19,7 +19,9 @@
 		port: site?.port ?? 22,
 		username: site?.username ?? '',
 		authType: (site?.auth.type ?? 'password') as AuthMethod['type'],
-		keyPath: site && site.auth.type === 'publicKey' ? site.auth.keyPath : ''
+		keyPath: site && site.auth.type === 'publicKey' ? site.auth.keyPath : '',
+		group: site?.group ?? '',
+		tags: (site?.tags ?? []).join(', ')
 	}));
 
 	let name = $state(init.name);
@@ -28,9 +30,16 @@
 	let username = $state(init.username);
 	let authType = $state<AuthMethod['type']>(init.authType);
 	let keyPath = $state(init.keyPath);
+	let group = $state(init.group);
+	let tags = $state(init.tags);
 	let password = $state('');
 	let saving = $state(false);
 	let errorMsg = $state<string | undefined>(undefined);
+
+	// Existing group names for the datalist (autocomplete), de-duplicated.
+	const groupOptions = $derived(
+		[...new Set(app.sites.map((s) => s.group).filter((g): g is string => !!g))].sort()
+	);
 
 	function buildAuth(): AuthMethod {
 		switch (authType) {
@@ -49,7 +58,18 @@
 		event.preventDefault();
 		saving = true;
 		errorMsg = undefined;
-		const input: SiteInput = { name, host, port: Number(port), username, auth: buildAuth() };
+		const input: SiteInput = {
+			name,
+			host,
+			port: Number(port),
+			username,
+			auth: buildAuth(),
+			group: group.trim() || null,
+			tags: tags
+				.split(',')
+				.map((t) => t.trim())
+				.filter(Boolean)
+		};
 		try {
 			if (editing && site) await app.updateSite(site.id, input, password || undefined);
 			else await app.addSite(input, password || undefined);
@@ -101,6 +121,20 @@
 				<input type="password" bind:value={password} />
 			</label>
 		{/if}
+
+		<div class="row">
+			<label class="grow">
+				{i18n.t('site.group')} <span class="hint">{i18n.t('site.groupHint')}</span>
+				<input bind:value={group} list="site-groups" autocomplete="off" />
+				<datalist id="site-groups">
+					{#each groupOptions as g (g)}<option value={g}></option>{/each}
+				</datalist>
+			</label>
+		</div>
+		<label>
+			{i18n.t('site.tags')} <span class="hint">{i18n.t('site.tagsHint')}</span>
+			<input bind:value={tags} placeholder="prod, db" autocomplete="off" />
+		</label>
 
 		{#if errorMsg}<p class="error">{errorMsg}</p>{/if}
 
