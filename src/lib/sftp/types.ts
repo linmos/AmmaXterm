@@ -5,4 +5,6 @@ export interface FileEntry {
 	size: number;
 	permissions: number | null;
 	modified: number | null;
+	uid: number | null;
+	gid: number | null;
 }

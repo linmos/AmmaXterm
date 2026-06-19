@@ -21,6 +21,60 @@
 	let renameValue = $state('');
 	let confirmingDelete = $state<string | null>(null);
 
+	// Filter + sort (FT-9) and chmod (FT-8).
+	let filter = $state('');
+	let sortKey = $state<'name' | 'size' | 'modified'>('name');
+	let sortAsc = $state(true);
+	let chmodTarget = $state<string | null>(null);
+	let chmodValue = $state('');
+
+	const shown = $derived.by(() => {
+		const q = filter.trim().toLowerCase();
+		const out = entries.filter((e) => !q || e.name.toLowerCase().includes(q));
+		const dir = sortAsc ? 1 : -1;
+		out.sort((a, b) => {
+			if (a.is_dir !== b.is_dir) return a.is_dir ? -1 : 1; // dirs first always
+			let c = 0;
+			if (sortKey === 'size') c = a.size - b.size;
+			else if (sortKey === 'modified') c = (a.modified ?? 0) - (b.modified ?? 0);
+			else c = a.name.toLowerCase().localeCompare(b.name.toLowerCase());
+			return c * dir;
+		});
+		return out;
+	});
+
+	function setSort(key: 'name' | 'size' | 'modified') {
+		if (sortKey === key) sortAsc = !sortAsc;
+		else {
+			sortKey = key;
+			sortAsc = true;
+		}
+	}
+
+	/** Render the low 9 permission bits as an `rwxr-xr-x` string. */
+	function permString(mode: number | null): string {
+		if (mode == null) return '';
+		const ch = ['x', 'w', 'r'];
+		let s = '';
+		for (let i = 8; i >= 0; i--) s += mode & (1 << i) ? ch[i % 3] : '-';
+		return s;
+	}
+	function fmtDate(mtime: number | null): string {
+		if (!mtime) return '';
+		return new Date(mtime * 1000).toISOString().slice(0, 16).replace('T', ' ');
+	}
+
+	function openChmod(entry: FileEntry) {
+		chmodTarget = entry.name;
+		chmodValue = ((entry.permissions ?? 0) & 0o777).toString(8).padStart(3, '0');
+	}
+	async function applyChmod(entry: FileEntry) {
+		const mode = parseInt(chmodValue, 8);
+		chmodTarget = null;
+		if (Number.isNaN(mode)) return;
+		await run(() => invoke('sftp_chmod', { id: sessionId, path: join(path, entry.name), mode }));
+	}
+
 	function join(dir: string, name: string): string {
 		if (dir === '.' || dir === '') return name;
 		return dir.replace(/\/+$/, '') + '/' + name;
@@ -158,12 +212,27 @@
 		</div>
 	{/if}
 
+	<div class="filterbar">
+		<input class="filter" placeholder={i18n.t('sftp.filter')} bind:value={filter} />
+		<div class="sorts">
+			<button class:on={sortKey === 'name'} onclick={() => setSort('name')}>
+				{i18n.t('sftp.sortName')}{sortKey === 'name' ? (sortAsc ? ' ↑' : ' ↓') : ''}
+			</button>
+			<button class:on={sortKey === 'size'} onclick={() => setSort('size')}>
+				{i18n.t('sftp.sortSize')}{sortKey === 'size' ? (sortAsc ? ' ↑' : ' ↓') : ''}
+			</button>
+			<button class:on={sortKey === 'modified'} onclick={() => setSort('modified')}>
+				{i18n.t('sftp.sortModified')}{sortKey === 'modified' ? (sortAsc ? ' ↑' : ' ↓') : ''}
+			</button>
+		</div>
+	</div>
+
 	{#if errorMsg}
 		<p class="err">{errorMsg}</p>
 	{/if}
 
 	<ul class="list">
-		{#each entries as entry (entry.name)}
+		{#each shown as entry (entry.name)}
 			<li>
 				{#if renaming === entry.name}
 					<input
@@ -176,8 +245,17 @@
 					/>
 				{:else}
 					<button class="row" class:dir={entry.is_dir} onclick={() => openEntry(entry)}>
-						<span class="name">{entry.is_dir ? '📁' : '📄'} {entry.name}</span>
-						{#if !entry.is_dir}<span class="size">{fmtSize(entry.size)}</span>{/if}
+						<span class="top">
+							<span class="name">{entry.is_dir ? '📁' : '📄'} {entry.name}</span>
+							{#if !entry.is_dir}<span class="size">{fmtSize(entry.size)}</span>{/if}
+						</span>
+						{#if entry.permissions != null || entry.modified}
+							<span class="meta">
+								{#if entry.permissions != null}<span class="perm">{permString(entry.permissions)}</span>{/if}
+								{#if entry.uid != null}<span>{entry.uid}:{entry.gid ?? 0}</span>{/if}
+								{#if entry.modified}<span>{fmtDate(entry.modified)}</span>{/if}
+							</span>
+						{/if}
 					</button>
 					<div class="ops">
 						{#if !entry.is_dir}
@@ -185,6 +263,7 @@
 								>⬇</button
 							>
 						{/if}
+						<button class="sm" title={i18n.t('sftp.chmod')} onclick={() => openChmod(entry)} disabled={busy}>⚙</button>
 						<button
 							class="sm"
 							title={i18n.t('sftp.rename')}
@@ -205,9 +284,23 @@
 						</button>
 					</div>
 				{/if}
+				{#if chmodTarget === entry.name}
+					<div class="chmod">
+						<span class="lbl">{i18n.t('sftp.chmod')}</span>
+						<input
+							class="octal"
+							bind:value={chmodValue}
+							onkeydown={(e) => {
+								if (e.key === 'Enter') applyChmod(entry);
+								else if (e.key === 'Escape') chmodTarget = null;
+							}}
+						/>
+						<button onclick={() => applyChmod(entry)} disabled={busy}>{i18n.t('sftp.apply')}</button>
+					</div>
+				{/if}
 			</li>
 		{/each}
-		{#if !entries.length && !loading && !errorMsg}
+		{#if !shown.length && !loading && !errorMsg}
 			<li class="empty">{i18n.t('sftp.empty')}</li>
 		{/if}
 	</ul>
@@ -268,9 +361,40 @@
 		padding: 0;
 		list-style: none;
 	}
+	.filterbar {
+		display: flex;
+		flex-direction: column;
+		gap: 4px;
+		padding: 6px;
+		border-bottom: 1px solid #333;
+	}
+	.filterbar .filter {
+		width: 100%;
+		box-sizing: border-box;
+	}
+	.sorts {
+		display: flex;
+		gap: 4px;
+	}
+	.sorts button {
+		flex: 1;
+		padding: 3px 4px;
+		border: 1px solid #3c3c3c;
+		border-radius: 4px;
+		background: #232323;
+		color: #bbb;
+		font: 11px system-ui, sans-serif;
+		cursor: pointer;
+	}
+	.sorts button.on {
+		background: #0e639c;
+		border-color: #0e639c;
+		color: #fff;
+	}
 	.list li {
 		display: flex;
 		align-items: center;
+		flex-wrap: wrap;
 	}
 	.list li:hover {
 		background: #2a2a2a;
@@ -279,8 +403,8 @@
 		flex: 1;
 		min-width: 0;
 		display: flex;
-		justify-content: space-between;
-		gap: 8px;
+		flex-direction: column;
+		gap: 1px;
 		padding: 4px 8px;
 		border: none;
 		background: transparent;
@@ -293,6 +417,11 @@
 		cursor: pointer;
 		color: #6cb6ff;
 	}
+	.row .top {
+		display: flex;
+		justify-content: space-between;
+		gap: 8px;
+	}
 	.row .name {
 		overflow: hidden;
 		text-overflow: ellipsis;
@@ -302,6 +431,37 @@
 		opacity: 0.6;
 		font-variant-numeric: tabular-nums;
 		flex: none;
+	}
+	.row .meta {
+		display: flex;
+		gap: 8px;
+		font-size: 10px;
+		opacity: 0.5;
+	}
+	.row .meta .perm {
+		font-family: Consolas, monospace;
+	}
+	.chmod {
+		flex-basis: 100%;
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		padding: 4px 8px 6px;
+	}
+	.chmod .lbl {
+		font-size: 11px;
+		opacity: 0.7;
+	}
+	.chmod .octal {
+		width: 70px;
+	}
+	.chmod button {
+		padding: 3px 10px;
+		border: none;
+		border-radius: 4px;
+		background: #0e639c;
+		color: #fff;
+		cursor: pointer;
 	}
 	.rename {
 		flex: 1;

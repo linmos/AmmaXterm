@@ -45,6 +45,7 @@ pub fn run() {
             commands::sftp_mkdir,
             commands::sftp_rename,
             commands::sftp_delete,
+            commands::sftp_chmod,
             commands::site_list,
             commands::site_add,
             commands::site_update,

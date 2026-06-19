@@ -12,7 +12,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use crate::error::{AppError, AppResult};
 use crate::ssh::SshHandle;
 
-/// One remote directory entry (FT-1).
+/// One remote directory entry (FT-1, FT-8).
 #[derive(Serialize)]
 pub struct FileEntry {
     pub name: String,
@@ -20,6 +20,8 @@ pub struct FileEntry {
     pub size: u64,
     pub permissions: Option<u32>,
     pub modified: Option<u32>,
+    pub uid: Option<u32>,
+    pub gid: Option<u32>,
 }
 
 fn sftp_err<E: std::fmt::Display>(e: E) -> AppError {
@@ -50,6 +52,8 @@ pub async fn list_dir(handle: &SshHandle, path: &str) -> AppResult<Vec<FileEntry
                 size: md.size.unwrap_or(0),
                 permissions: md.permissions,
                 modified: md.mtime,
+                uid: md.uid,
+                gid: md.gid,
             }
         })
         .collect();
@@ -101,6 +105,16 @@ pub async fn make_dir(handle: &SshHandle, path: &str) -> AppResult<()> {
 pub async fn rename(handle: &SshHandle, from: &str, to: &str) -> AppResult<()> {
     let sftp = open(handle).await?;
     sftp.rename(from, to).await.map_err(sftp_err)
+}
+
+/// Change a remote file's permission bits (FT-8). Only the low 12 bits
+/// (rwx + setuid/setgid/sticky) are replaced; the file-type bits are preserved.
+pub async fn chmod(handle: &SshHandle, path: &str, mode: u32) -> AppResult<()> {
+    let sftp = open(handle).await?;
+    let mut md = sftp.metadata(path).await.map_err(sftp_err)?;
+    let kept = md.permissions.unwrap_or(0) & !0o7777;
+    md.permissions = Some(kept | (mode & 0o7777));
+    sftp.set_metadata(path, md).await.map_err(sftp_err)
 }
 
 /// Delete a remote file, or a directory and its contents recursively (FT-3).

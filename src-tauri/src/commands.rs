@@ -237,6 +237,18 @@ pub async fn sftp_rename(
     crate::sftp::rename(&handle, &from, &to).await
 }
 
+/// Change a remote file's permission bits (FT-8).
+#[tauri::command]
+pub async fn sftp_chmod(
+    id: String,
+    path: String,
+    mode: u32,
+    manager: State<'_, SessionManager>,
+) -> AppResult<()> {
+    let handle = manager.handle(&id)?;
+    crate::sftp::chmod(&handle, &path, mode).await
+}
+
 /// Delete a remote file or directory (recursive for dirs) (FT-3).
 #[tauri::command]
 pub async fn sftp_delete(
