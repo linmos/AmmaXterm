@@ -1,0 +1,4 @@
+# pnpm settings (pnpm 11+ reads these here, not from package.json).
+# Allow esbuild's postinstall so it fetches its platform binary (vite needs it).
+allowBuilds:
+  esbuild: true

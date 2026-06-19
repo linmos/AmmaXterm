@@ -59,13 +59,15 @@ and key generation + the encrypted vault. Remaining for the v1.0 tag: bastion
 
 ## Build from source
 
-Prerequisites: **Rust** (stable), **Node.js 20+**, and your platform's
+Prerequisites: **Rust** (stable), **Node.js 20+**, **pnpm** (the package
+manager — easiest via `corepack enable`), and your platform's
 [Tauri prerequisites](https://tauri.app/start/prerequisites/).
 
 ```bash
-npm install
-npm run tauri dev     # run in development
-npm run tauri build   # produce a release bundle
+corepack enable        # makes pnpm available (bundled with Node)
+pnpm install
+pnpm tauri dev         # run in development
+pnpm tauri build       # produce a release bundle
 ```
 
 ## Documentation
