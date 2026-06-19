@@ -167,12 +167,13 @@
 		newFolder = null;
 	}
 
-	async function commitRename(entry: FileEntry) {
+	async function commitRename() {
+		const oldName = renaming;
 		const name = renameValue.trim();
 		renaming = null;
-		if (!name || name === entry.name) return;
+		if (!oldName || !name || name === oldName) return;
 		await run(() =>
-			invoke('sftp_rename', { id: sessionId, from: join(path, entry.name), to: join(path, name) })
+			invoke('sftp_rename', { id: sessionId, from: join(path, oldName), to: join(path, name) })
 		);
 	}
 
@@ -356,38 +357,24 @@
 			<div class="spacer" style="height:{shown.length * ROW_H}px">
 				{#each visible as entry, vi (entry.name)}
 					<div class="vrow" style="top:{(vStart + vi) * ROW_H}px; height:{ROW_H}px">
-						{#if renaming === entry.name}
-							<input
-								class="rename"
-								bind:value={renameValue}
-								onkeydown={(e) => {
-									if (e.key === 'Enter') commitRename(entry);
-									else if (e.key === 'Escape') renaming = null;
-								}}
-							/>
-						{:else}
-							<button
-								class="row"
-								class:dir={entry.is_dir}
-								onclick={() => openEntry(entry)}
-								oncontextmenu={(e) => openMenu(entry, e)}
-							>
-								<span class="top">
-									<span class="name">{entry.is_dir ? '📁' : '📄'} {entry.name}</span>
-									{#if !entry.is_dir}<span class="size">{fmtSize(entry.size)}</span>{/if}
+						<button
+							class="row"
+							class:dir={entry.is_dir}
+							onclick={() => openEntry(entry)}
+							oncontextmenu={(e) => openMenu(entry, e)}
+						>
+							<span class="top">
+								<span class="name">{entry.is_dir ? '📁' : '📄'} {entry.name}</span>
+								{#if !entry.is_dir}<span class="size">{fmtSize(entry.size)}</span>{/if}
+							</span>
+							{#if entry.permissions != null || entry.modified}
+								<span class="meta">
+									{#if entry.permissions != null}<span class="perm">{permString(entry.permissions)}</span>{/if}
+									{#if entry.uid != null}<span>{entry.uid}:{entry.gid ?? 0}</span>{/if}
+									{#if entry.modified}<span>{fmtDate(entry.modified)}</span>{/if}
 								</span>
-								{#if entry.permissions != null || entry.modified}
-									<span class="meta">
-										{#if entry.permissions != null}<span class="perm">{permString(entry.permissions)}</span>{/if}
-										{#if entry.uid != null}<span>{entry.uid}:{entry.gid ?? 0}</span>{/if}
-										{#if entry.modified}<span>{fmtDate(entry.modified)}</span>{/if}
-									</span>
-								{/if}
-							</button>
-							<div class="ops">
-								<button class="menu-btn" title={i18n.t('sftp.more')} onclick={(e) => openMenu(entry, e)} disabled={busy}>⋯</button>
-							</div>
-						{/if}
+							{/if}
+						</button>
 					</div>
 				{/each}
 			</div>
@@ -417,18 +404,59 @@
 		</div>
 	{/if}
 
+	{#if renaming !== null}
+		<div
+			class="modal-backdrop"
+			role="presentation"
+			onclick={(e) => {
+				if (e.target === e.currentTarget) renaming = null;
+			}}
+		>
+			<div class="modal">
+				<h3>{i18n.t('sftp.rename')}</h3>
+				<!-- svelte-ignore a11y_autofocus -->
+				<input
+					autofocus
+					bind:value={renameValue}
+					onkeydown={(e) => {
+						if (e.key === 'Enter') commitRename();
+						else if (e.key === 'Escape') renaming = null;
+					}}
+				/>
+				<div class="acts">
+					<button class="ghost" onclick={() => (renaming = null)}>{i18n.t('common.cancel')}</button>
+					<button onclick={commitRename} disabled={busy}>{i18n.t('common.save')}</button>
+				</div>
+			</div>
+		</div>
+	{/if}
+
 	{#if chmodTarget}
-		<div class="chmod">
-			<span class="lbl">{i18n.t('sftp.chmod')}: {chmodTarget}</span>
-			<input
-				class="octal"
-				bind:value={chmodValue}
-				onkeydown={(e) => {
-					if (e.key === 'Enter') applyChmod();
-					else if (e.key === 'Escape') chmodTarget = null;
-				}}
-			/>
-			<button onclick={applyChmod} disabled={busy}>{i18n.t('sftp.apply')}</button>
+		<div
+			class="modal-backdrop"
+			role="presentation"
+			onclick={(e) => {
+				if (e.target === e.currentTarget) chmodTarget = null;
+			}}
+		>
+			<div class="modal">
+				<h3>{i18n.t('sftp.chmod')}</h3>
+				<p class="sub">{chmodTarget}</p>
+				<!-- svelte-ignore a11y_autofocus -->
+				<input
+					class="octal"
+					autofocus
+					bind:value={chmodValue}
+					onkeydown={(e) => {
+						if (e.key === 'Enter') applyChmod();
+						else if (e.key === 'Escape') chmodTarget = null;
+					}}
+				/>
+				<div class="acts">
+					<button class="ghost" onclick={() => (chmodTarget = null)}>{i18n.t('common.cancel')}</button>
+					<button onclick={applyChmod} disabled={busy}>{i18n.t('sftp.apply')}</button>
+				</div>
+			</div>
 		</div>
 	{/if}
 
@@ -614,59 +642,80 @@
 	.row .meta .perm {
 		font-family: Consolas, monospace;
 	}
-	.chmod {
+	.modal-backdrop {
+		position: fixed;
+		inset: 0;
 		display: flex;
 		align-items: center;
-		gap: 6px;
-		padding: 6px 8px;
-		border-top: 1px solid var(--vsc-border);
-		background: rgba(0, 0, 0, 0.18);
+		justify-content: center;
+		background: rgba(0, 0, 0, 0.55);
+		z-index: 30;
 	}
-	.chmod .lbl {
-		font-size: 11px;
+	.modal {
+		display: flex;
+		flex-direction: column;
+		gap: 12px;
+		width: 320px;
+		max-width: 92vw;
+		box-sizing: border-box;
+		padding: 18px 20px;
+		background: var(--vsc-widget-bg);
+		border: 1px solid var(--vsc-widget-border);
+		border-radius: 6px;
+		color: var(--vsc-editor-fg);
+		font: 13px var(--vsc-font);
+		box-shadow: 0 8px 32px rgba(0, 0, 0, 0.44);
+	}
+	.modal h3 {
+		margin: 0;
+		font-size: 15px;
+		font-weight: 600;
+	}
+	.modal .sub {
+		margin: 0;
+		font-size: 12px;
 		color: var(--vsc-muted);
+		word-break: break-all;
 	}
-	.chmod .octal {
-		width: 70px;
+	.modal input {
+		padding: 7px 9px;
+		border: 1px solid var(--vsc-input-border);
+		border-radius: 4px;
+		background: var(--vsc-input-bg);
+		color: var(--vsc-input-fg);
+		font: 13px var(--vsc-font);
+		box-sizing: border-box;
 	}
-	.chmod button {
-		padding: 3px 10px;
+	.modal input:focus {
+		outline: 1px solid var(--vsc-focus-border);
+		outline-offset: -1px;
+	}
+	.modal .acts {
+		display: flex;
+		justify-content: flex-end;
+		gap: 8px;
+	}
+	.modal button {
+		padding: 7px 14px;
 		border: none;
 		border-radius: 3px;
 		background: var(--vsc-button-bg);
 		color: #fff;
+		font: 13px var(--vsc-font);
 		cursor: pointer;
 	}
-	.chmod button:hover {
+	.modal button:hover {
 		background: var(--vsc-button-hover);
 	}
-	.rename {
-		flex: 1;
-		margin: 2px 6px;
+	.modal button:disabled {
+		opacity: 0.5;
+		cursor: default;
 	}
-	.ops {
-		display: flex;
-		gap: 2px;
-		padding-right: 6px;
+	.modal .ghost {
+		background: var(--vsc-button-secondary-bg);
+		color: var(--vsc-button-secondary-fg);
 	}
-	/* Single overflow button, revealed on row hover (or keyboard focus). */
-	.menu-btn {
-		padding: 2px 8px;
-		border: none;
-		border-radius: 4px;
-		background: transparent;
-		color: var(--vsc-sidebar-fg);
-		font-size: 16px;
-		line-height: 1;
-		cursor: pointer;
-		opacity: 0;
-	}
-	.vrow:hover .menu-btn,
-	.menu-btn:focus-visible {
-		opacity: 0.85;
-	}
-	.menu-btn:hover {
-		opacity: 1;
+	.modal .ghost:hover {
 		background: var(--vsc-button-secondary-hover);
 	}
 	.ctx-scrim {
