@@ -4,7 +4,34 @@
 [advisories]
 version = 2
 yanked = "warn"
-ignore = []
+# All ignores below are TRANSITIVE deps we don't control and that have no fixed
+# release; none is an actionable issue in AmmaXterm's own code. Revisit when the
+# upstreams (Tauri, russh) move off them.
+ignore = [
+  # rsa "Marvin Attack" timing side-channel — no fixed `rsa` release exists yet;
+  # pulled in via russh for RSA key support. Low practical risk for an SSH client.
+  { id = "RUSTSEC-2023-0071", reason = "no fix available; transitive via russh, low risk for a client" },
+  # proc-macro-error: unmaintained build-time macro dep (transitive).
+  { id = "RUSTSEC-2024-0370", reason = "unmaintained, build-time only, transitive" },
+  # gtk-rs GTK3 bindings — unmaintained; Tauri v2 still uses gtk3/webkit2gtk on
+  # Linux. Build-time/Linux-only; tracked until Tauri migrates to gtk4.
+  { id = "RUSTSEC-2024-0411", reason = "gtk3 unmaintained; transitive via Tauri (Linux)" },
+  { id = "RUSTSEC-2024-0412", reason = "gtk3 unmaintained; transitive via Tauri (Linux)" },
+  { id = "RUSTSEC-2024-0413", reason = "gtk3 unmaintained; transitive via Tauri (Linux)" },
+  { id = "RUSTSEC-2024-0414", reason = "gtk3 unmaintained; transitive via Tauri (Linux)" },
+  { id = "RUSTSEC-2024-0415", reason = "gtk3 unmaintained; transitive via Tauri (Linux)" },
+  { id = "RUSTSEC-2024-0416", reason = "gtk3 unmaintained; transitive via Tauri (Linux)" },
+  { id = "RUSTSEC-2024-0417", reason = "gtk3 unmaintained; transitive via Tauri (Linux)" },
+  { id = "RUSTSEC-2024-0418", reason = "gtk3 unmaintained; transitive via Tauri (Linux)" },
+  { id = "RUSTSEC-2024-0419", reason = "gtk3 unmaintained; transitive via Tauri (Linux)" },
+  { id = "RUSTSEC-2024-0420", reason = "gtk3 unmaintained; transitive via Tauri (Linux)" },
+  # unic-* crates — unmaintained; transitive.
+  { id = "RUSTSEC-2025-0075", reason = "unic-* unmaintained; transitive" },
+  { id = "RUSTSEC-2025-0080", reason = "unic-* unmaintained; transitive" },
+  { id = "RUSTSEC-2025-0081", reason = "unic-* unmaintained; transitive" },
+  { id = "RUSTSEC-2025-0098", reason = "unic-* unmaintained; transitive" },
+  { id = "RUSTSEC-2025-0100", reason = "unic-* unmaintained; transitive" },
+]
 
 [bans]
 multiple-versions = "allow"
