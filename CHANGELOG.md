@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Light theme** for the whole shell (not just the terminal), with a new
+  "follow system" theme option that tracks the OS colour scheme live and is now
+  the default.
+
 ### Planned
 - Bastion / ProxyJump (multi-hop) and the remaining per-site overrides.
 - PuTTY session import.
