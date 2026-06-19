@@ -1,6 +1,7 @@
 <script lang="ts">
-	import { onMount, untrack } from 'svelte';
+	import { onMount, onDestroy, untrack } from 'svelte';
 	import { invoke } from '@tauri-apps/api/core';
+	import { getCurrentWebview } from '@tauri-apps/api/webview';
 	import { open, save } from '@tauri-apps/plugin-dialog';
 	import { app } from '$lib/state.svelte';
 	import { i18n } from '$lib/i18n.svelte';
@@ -212,10 +213,48 @@
 		return `${(n / 1024 / 1024 / 1024).toFixed(1)} GB`;
 	}
 
-	onMount(list);
+	// Drag-drop upload (FT-5): OS files dropped onto the panel upload here.
+	let panelEl = $state<HTMLDivElement | undefined>();
+	let dragOver = $state(false);
+	let unlistenDrop: (() => void) | undefined;
+
+	function inBounds(pos: { x: number; y: number }): boolean {
+		if (!panelEl) return false;
+		const r = panelEl.getBoundingClientRect();
+		const dpr = window.devicePixelRatio || 1;
+		const x = pos.x / dpr;
+		const y = pos.y / dpr;
+		return x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
+	}
+
+	onMount(() => {
+		list();
+		getCurrentWebview()
+			.onDragDropEvent((event) => {
+				const p = event.payload;
+				if (p.type === 'over' || p.type === 'enter') {
+					dragOver = inBounds(p.position);
+				} else if (p.type === 'leave') {
+					dragOver = false;
+				} else if (p.type === 'drop') {
+					const over = inBounds(p.position);
+					dragOver = false;
+					if (over) {
+						for (const f of p.paths) {
+							app.uploadFile(sessionId, f, join(path, basename(f)));
+						}
+					}
+				}
+			})
+			.then((un) => (unlistenDrop = un));
+	});
+	onDestroy(() => unlistenDrop?.());
 </script>
 
-<div class="sftp">
+<div class="sftp" bind:this={panelEl}>
+	{#if dragOver}
+		<div class="dropzone">{i18n.t('sftp.drop')}</div>
+	{/if}
 	<div class="bar">
 		<button onclick={up} title={i18n.t('sftp.up')} disabled={busy}>↑</button>
 		<input
@@ -357,12 +396,27 @@
 
 <style>
 	.sftp {
+		position: relative;
 		display: flex;
 		flex-direction: column;
 		height: 100%;
 		color: #ddd;
 		font: 13px system-ui, sans-serif;
 		background: #1b1b1b;
+	}
+	.dropzone {
+		position: absolute;
+		inset: 0;
+		z-index: 8;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		background: rgba(14, 99, 156, 0.25);
+		border: 2px dashed #0e639c;
+		border-radius: 6px;
+		color: #cfe6ff;
+		font-size: 14px;
+		pointer-events: none;
 	}
 	.bar {
 		display: flex;
