@@ -1,8 +1,21 @@
 <script lang="ts">
 	import { app } from '$lib/state.svelte';
+	import type { Tab } from '$lib/state.svelte';
 	import { i18n } from '$lib/i18n.svelte';
-	import { settings } from '$lib/settings.svelte';
+	import { settings, xtermTheme } from '$lib/settings.svelte';
 	import Terminal from '$lib/terminal/Terminal.svelte';
+
+	/** Resolve a tab's effective terminal appearance: per-site overrides (SM-6)
+	 *  fall back to the global settings. */
+	function appearance(tab: Tab) {
+		const o = tab.siteId ? app.sites.find((s) => s.id === tab.siteId)?.overrides : null;
+		return {
+			fontSize: o?.fontSize ?? settings.s.fontSize,
+			fontFamily: o?.fontFamily || settings.s.fontFamily,
+			scrollback: o?.scrollback ?? settings.s.scrollback,
+			theme: o?.theme ? xtermTheme(o.theme) : settings.theme
+		};
+	}
 </script>
 
 <div class="tabs-wrap">
@@ -29,15 +42,16 @@
 						{/if}
 					</div>
 				{:else}
+					{@const a = appearance(tab)}
 					<Terminal
 						onReady={(api) => app.setTabApi(tab.key, api)}
 						onData={(data) => app.sendInput(tab.key, data)}
 						onResize={(size) => app.resizeTab(tab.key, size)}
 						onCwd={(p) => app.setTabCwd(tab.key, p)}
-						fontSize={settings.s.fontSize}
-						fontFamily={settings.s.fontFamily}
-						scrollback={settings.s.scrollback}
-						theme={settings.theme}
+						fontSize={a.fontSize}
+						fontFamily={a.fontFamily}
+						scrollback={a.scrollback}
+						theme={a.theme}
 					/>
 					{#if tab.status === 'closed'}
 						<div class="badge">

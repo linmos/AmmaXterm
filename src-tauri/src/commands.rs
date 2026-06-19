@@ -11,7 +11,7 @@ use crate::secrets::{self, SecretKind};
 use crate::session::SessionManager;
 use crate::settings::{Settings, SettingsStore};
 use crate::sftp::FileEntry;
-use crate::ssh::{AuthCredential, ConnectOptions, ConnectRequest, HostKeyPrompts};
+use crate::ssh::{AuthCredential, ConnectOptions, ConnectRequest, HopRequest, HostKeyPrompts};
 use crate::store::{AuthMethod, Site, SiteInput, SiteStore};
 use crate::transfer::{TransferInfo, TransferManager};
 use crate::tunnel::{TunnelInfo, TunnelManager, TunnelSpec};
@@ -54,6 +54,30 @@ pub async fn ssh_connect(
         .await
 }
 
+/// Resolve a site's auth method into a connect-time credential, fetching any
+/// secret from the keychain keyed by the site's own id (TM-2).
+fn resolve_auth(site_id: &str, auth: &AuthMethod) -> AppResult<AuthCredential> {
+    Ok(match auth {
+        AuthMethod::Password => AuthCredential::Password(
+            secrets::get(SecretKind::Password, site_id)?
+                .ok_or_else(|| AppError::Auth("no saved password for this site".into()))?,
+        ),
+        AuthMethod::PublicKey { key_path } => AuthCredential::PublicKey {
+            key_path: key_path.clone(),
+            passphrase: secrets::get(SecretKind::Passphrase, site_id)?,
+        },
+        AuthMethod::KeyboardInteractive => AuthCredential::KeyboardInteractive(
+            secrets::get(SecretKind::Password, site_id)?
+                .ok_or_else(|| AppError::Auth("no saved secret for this site".into()))?,
+        ),
+        AuthMethod::Agent => {
+            return Err(AppError::Other(
+                "SSH agent auth is not supported yet".into(),
+            ))
+        }
+    })
+}
+
 /// Open an SSH session from a saved site, resolving its secret from the keychain.
 #[allow(clippy::too_many_arguments)]
 #[tauri::command]
@@ -71,34 +95,40 @@ pub async fn site_connect(
 ) -> AppResult<String> {
     let site = store.get(&site_id)?;
     let known_hosts = config_dir(&app)?.join("known_hosts");
-    let keepalive = settings.get().keepalive_secs;
+    // Keepalive: per-site override (SM-6) falls back to the global default (TM-8).
+    let keepalive = site
+        .overrides
+        .as_ref()
+        .and_then(|o| o.keepalive_secs)
+        .unwrap_or_else(|| settings.get().keepalive_secs);
     let site_tunnels = site.tunnels.clone();
 
-    let auth = match site.auth {
-        AuthMethod::Password => AuthCredential::Password(
-            secrets::get(SecretKind::Password, &site_id)?
-                .ok_or_else(|| AppError::Auth("no saved password for this site".into()))?,
-        ),
-        AuthMethod::PublicKey { key_path } => AuthCredential::PublicKey {
-            key_path,
-            passphrase: secrets::get(SecretKind::Passphrase, &site_id)?,
-        },
-        AuthMethod::KeyboardInteractive => AuthCredential::KeyboardInteractive(
-            secrets::get(SecretKind::Password, &site_id)?
-                .ok_or_else(|| AppError::Auth("no saved secret for this site".into()))?,
-        ),
-        AuthMethod::Agent => {
-            return Err(AppError::Other(
-                "SSH agent auth is not supported yet".into(),
-            ))
+    let auth = resolve_auth(&site_id, &site.auth)?;
+
+    // Resolve the ProxyJump chain (TM-9): each entry is the id of another saved
+    // site whose own auth/secret is used for that hop. Self-references are
+    // skipped to avoid a trivial loop.
+    let mut jumps = Vec::new();
+    for jump_id in &site.proxy_jump {
+        if jump_id == &site_id {
+            continue;
         }
-    };
+        let j = store.get(jump_id)?;
+        let jauth = resolve_auth(&j.id, &j.auth)?;
+        jumps.push(HopRequest {
+            host: j.host,
+            port: j.port,
+            username: j.username,
+            auth: jauth,
+        });
+    }
 
     let req = ConnectRequest {
         host: site.host,
         port: site.port,
         username: site.username,
         auth,
+        jumps,
         cols,
         rows,
     };

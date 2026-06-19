@@ -252,7 +252,10 @@ class AppState {
 			username: site.username,
 			auth: site.auth,
 			group,
-			tags: site.tags
+			tags: site.tags,
+			tunnels: site.tunnels,
+			proxyJump: site.proxyJump,
+			overrides: site.overrides
 		};
 		await this.updateSite(site.id, input);
 	}

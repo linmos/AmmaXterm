@@ -13,10 +13,29 @@ use uuid::Uuid;
 use crate::error::{AppError, AppResult};
 use crate::tunnel::TunnelSpec;
 
-const SCHEMA_VERSION: u32 = 1;
+const SCHEMA_VERSION: u32 = 2;
 
 fn default_port() -> u16 {
     22
+}
+
+/// Per-site overrides of the global terminal/connection defaults (SM-6). Every
+/// field is optional: `None` means "inherit the global setting". Appearance
+/// fields are applied by the frontend per tab; `keepalive_secs` is applied at
+/// connect time.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SiteOverrides {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub theme: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub font_family: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub font_size: Option<u16>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scrollback: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub keepalive_secs: Option<u32>,
 }
 
 /// How a site authenticates. Secret material is never stored inline.
@@ -52,6 +71,13 @@ pub struct Site {
     /// Tunnels auto-established when this site connects (PF-4).
     #[serde(default)]
     pub tunnels: Vec<TunnelSpec>,
+    /// ProxyJump chain (TM-9): ordered ids of saved sites to hop through,
+    /// client → jump[0] → … → this site. Each jump uses its own saved auth.
+    #[serde(default)]
+    pub proxy_jump: Vec<String>,
+    /// Per-site overrides of the global defaults (SM-6).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub overrides: Option<SiteOverrides>,
 }
 
 /// Create/update payload from the frontend (id is assigned by the store).
@@ -71,6 +97,10 @@ pub struct SiteInput {
     pub tags: Vec<String>,
     #[serde(default)]
     pub tunnels: Vec<TunnelSpec>,
+    #[serde(default)]
+    pub proxy_jump: Vec<String>,
+    #[serde(default)]
+    pub overrides: Option<SiteOverrides>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -142,6 +172,8 @@ impl SiteStore {
             group: input.group,
             tags: input.tags,
             tunnels: input.tunnels,
+            proxy_jump: input.proxy_jump,
+            overrides: input.overrides,
         };
         let mut guard = self.sites.lock().unwrap();
         guard.push(site.clone());
@@ -169,6 +201,8 @@ impl SiteStore {
             group: input.group,
             tags: input.tags,
             tunnels: input.tunnels,
+            proxy_jump: input.proxy_jump,
+            overrides: input.overrides,
         };
         let updated = guard[idx].clone();
         if let Err(e) = self.persist(&guard) {
