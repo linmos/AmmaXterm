@@ -3,8 +3,9 @@
 	import { open } from '@tauri-apps/plugin-dialog';
 	import { app } from '$lib/state.svelte';
 	import { i18n } from '$lib/i18n.svelte';
-	import type { AuthMethod, Site, SiteInput } from './types';
+	import type { AuthMethod, Site, SiteInput, SiteOverrides } from './types';
 	import type { TunnelSpec } from '../tunnel/types';
+	import { THEME_NAMES } from '$lib/settings.svelte';
 
 	interface Props {
 		site?: Site;
@@ -24,7 +25,9 @@
 		keyPath: site && site.auth.type === 'publicKey' ? site.auth.keyPath : '',
 		group: site?.group ?? '',
 		tags: (site?.tags ?? []).join(', '),
-		tunnels: (site?.tunnels ?? []).map((t) => ({ ...t }))
+		tunnels: (site?.tunnels ?? []).map((t) => ({ ...t })),
+		proxyJump: [...(site?.proxyJump ?? [])],
+		ov: site?.overrides ?? null
 	}));
 
 	let name = $state(init.name);
@@ -39,6 +42,43 @@
 	let password = $state('');
 	let saving = $state(false);
 	let errorMsg = $state<string | undefined>(undefined);
+
+	// ProxyJump chain (TM-9): ordered ids of saved sites to hop through.
+	let proxyJump = $state<string[]>(init.proxyJump);
+	let jumpPick = $state('');
+
+	// Per-site overrides (SM-6); blank string = inherit the global default.
+	let ovTheme = $state(init.ov?.theme ?? '');
+	let ovFontFamily = $state(init.ov?.fontFamily ?? '');
+	let ovFontSize = $state(init.ov?.fontSize != null ? String(init.ov.fontSize) : '');
+	let ovScrollback = $state(init.ov?.scrollback != null ? String(init.ov.scrollback) : '');
+	let ovKeepalive = $state(init.ov?.keepaliveSecs != null ? String(init.ov.keepaliveSecs) : '');
+
+	// Saved sites eligible as jump hosts: anything but the site being edited and
+	// hosts already in the chain.
+	const jumpCandidates = $derived(
+		app.sites.filter((s) => s.id !== site?.id && !proxyJump.includes(s.id))
+	);
+	function siteName(id: string): string {
+		return app.sites.find((s) => s.id === id)?.name ?? id;
+	}
+	function addJump() {
+		if (jumpPick && !proxyJump.includes(jumpPick)) proxyJump = [...proxyJump, jumpPick];
+		jumpPick = '';
+	}
+	function removeJump(i: number) {
+		proxyJump = proxyJump.filter((_, idx) => idx !== i);
+	}
+
+	function buildOverrides(): SiteOverrides | null {
+		const o: SiteOverrides = {};
+		if (ovTheme) o.theme = ovTheme;
+		if (ovFontFamily.trim()) o.fontFamily = ovFontFamily.trim();
+		if (ovFontSize.trim()) o.fontSize = Number(ovFontSize);
+		if (ovScrollback.trim()) o.scrollback = Number(ovScrollback);
+		if (ovKeepalive.trim()) o.keepaliveSecs = Number(ovKeepalive);
+		return Object.keys(o).length ? o : null;
+	}
 
 	async function browseKey() {
 		const picked = await open({ multiple: false, directory: false, title: i18n.t('site.keyPath') });
@@ -109,7 +149,9 @@
 				.split(',')
 				.map((t) => t.trim())
 				.filter(Boolean),
-			tunnels
+			tunnels,
+			proxyJump,
+			overrides: buildOverrides()
 		};
 		try {
 			if (editing && site) await app.updateSite(site.id, input, password || undefined);
@@ -205,6 +247,56 @@
 				<button type="button" class="tadd-btn" onclick={addTunnel}>＋</button>
 			</div>
 		</div>
+
+		<div class="tunnels">
+			<div class="tlabel">{i18n.t('site.proxyJump')} <span class="hint">{i18n.t('site.proxyJumpHint')}</span></div>
+			{#each proxyJump as id, i (id)}
+				<div class="trow">
+					<span class="tinfo">{i + 1}. {siteName(id)}</span>
+					<button type="button" class="tdel" onclick={() => removeJump(i)}>×</button>
+				</div>
+			{/each}
+			{#if jumpCandidates.length}
+				<div class="tadd">
+					<select class="grow" bind:value={jumpPick}>
+						<option value="">{i18n.t('site.proxyJumpPick')}</option>
+						{#each jumpCandidates as s (s.id)}<option value={s.id}>{s.name}</option>{/each}
+					</select>
+					<button type="button" class="tadd-btn" onclick={addJump}>＋</button>
+				</div>
+			{:else if !proxyJump.length}
+				<div class="hint">{i18n.t('site.proxyJumpNone')}</div>
+			{/if}
+		</div>
+
+		<details class="overrides">
+			<summary>{i18n.t('site.overrides')} <span class="hint">{i18n.t('site.overridesHint')}</span></summary>
+			<label>
+				{i18n.t('settings.theme')}
+				<select bind:value={ovTheme}>
+					<option value="">{i18n.t('site.inherit')}</option>
+					{#each THEME_NAMES as name (name)}<option value={name}>{i18n.t(`theme.${name}`)}</option>{/each}
+				</select>
+			</label>
+			<label>
+				{i18n.t('settings.fontFamily')}
+				<input bind:value={ovFontFamily} placeholder={i18n.t('site.inherit')} autocomplete="off" />
+			</label>
+			<div class="row">
+				<label class="grow">
+					{i18n.t('settings.fontSize')}
+					<input type="number" min="6" max="40" bind:value={ovFontSize} placeholder={i18n.t('site.inherit')} />
+				</label>
+				<label class="grow">
+					{i18n.t('settings.scrollback')}
+					<input type="number" min="0" bind:value={ovScrollback} placeholder={i18n.t('site.inherit')} />
+				</label>
+			</div>
+			<label>
+				{i18n.t('settings.keepalive')} <span class="hint">{i18n.t('settings.keepaliveHint')}</span>
+				<input type="number" min="0" bind:value={ovKeepalive} placeholder={i18n.t('site.inherit')} />
+			</label>
+		</details>
 
 		{#if errorMsg}<p class="error">{errorMsg}</p>{/if}
 
@@ -347,6 +439,23 @@
 	.tadd-btn {
 		flex: 0 0 auto;
 		padding: 6px 10px;
+	}
+	.tadd select.grow {
+		flex: 1;
+		min-width: 0;
+	}
+	.overrides {
+		border: 1px solid #333;
+		border-radius: 6px;
+		padding: 8px;
+	}
+	.overrides summary {
+		font-size: 12px;
+		opacity: 0.9;
+		cursor: pointer;
+	}
+	.overrides label {
+		margin-top: 8px;
 	}
 	.actions {
 		display: flex;

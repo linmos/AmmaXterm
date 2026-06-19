@@ -11,7 +11,7 @@ use crate::secrets::{self, SecretKind};
 use crate::session::SessionManager;
 use crate::settings::{Settings, SettingsStore};
 use crate::sftp::FileEntry;
-use crate::ssh::{AuthCredential, ConnectOptions, ConnectRequest, HostKeyPrompts};
+use crate::ssh::{AuthCredential, ConnectOptions, ConnectRequest, HopRequest, HostKeyPrompts};
 use crate::store::{AuthMethod, Site, SiteInput, SiteStore};
 use crate::transfer::{TransferInfo, TransferManager};
 use crate::tunnel::{TunnelInfo, TunnelManager, TunnelSpec};
@@ -54,6 +54,31 @@ pub async fn ssh_connect(
         .await
 }
 
+/// Resolve a site's auth method into a connect-time credential, fetching any
+/// secret keyed by the site's own id — preferring the OS keychain, falling back
+/// to the encrypted vault when no keychain is available (TM-2 / AK-1 / AK-4).
+fn resolve_auth(site_id: &str, auth: &AuthMethod, vault: &VaultState) -> AppResult<AuthCredential> {
+    Ok(match auth {
+        AuthMethod::Password => AuthCredential::Password(
+            secrets::get_pref(SecretKind::Password, site_id, vault)?
+                .ok_or_else(|| AppError::Auth("no saved password for this site".into()))?,
+        ),
+        AuthMethod::PublicKey { key_path } => AuthCredential::PublicKey {
+            key_path: key_path.clone(),
+            passphrase: secrets::get_pref(SecretKind::Passphrase, site_id, vault)?,
+        },
+        AuthMethod::KeyboardInteractive => AuthCredential::KeyboardInteractive(
+            secrets::get_pref(SecretKind::Password, site_id, vault)?
+                .ok_or_else(|| AppError::Auth("no saved secret for this site".into()))?,
+        ),
+        AuthMethod::Agent => {
+            return Err(AppError::Other(
+                "SSH agent auth is not supported yet".into(),
+            ))
+        }
+    })
+}
+
 /// Open an SSH session from a saved site, resolving its secret from the keychain.
 #[allow(clippy::too_many_arguments)]
 #[tauri::command]
@@ -68,37 +93,44 @@ pub async fn site_connect(
     prompts: State<'_, HostKeyPrompts>,
     settings: State<'_, SettingsStore>,
     tunnels: State<'_, TunnelManager>,
+    vault: State<'_, VaultState>,
 ) -> AppResult<String> {
     let site = store.get(&site_id)?;
     let known_hosts = config_dir(&app)?.join("known_hosts");
-    let keepalive = settings.get().keepalive_secs;
+    // Keepalive: per-site override (SM-6) falls back to the global default (TM-8).
+    let keepalive = site
+        .overrides
+        .as_ref()
+        .and_then(|o| o.keepalive_secs)
+        .unwrap_or_else(|| settings.get().keepalive_secs);
     let site_tunnels = site.tunnels.clone();
 
-    let auth = match site.auth {
-        AuthMethod::Password => AuthCredential::Password(
-            secrets::get(SecretKind::Password, &site_id)?
-                .ok_or_else(|| AppError::Auth("no saved password for this site".into()))?,
-        ),
-        AuthMethod::PublicKey { key_path } => AuthCredential::PublicKey {
-            key_path,
-            passphrase: secrets::get(SecretKind::Passphrase, &site_id)?,
-        },
-        AuthMethod::KeyboardInteractive => AuthCredential::KeyboardInteractive(
-            secrets::get(SecretKind::Password, &site_id)?
-                .ok_or_else(|| AppError::Auth("no saved secret for this site".into()))?,
-        ),
-        AuthMethod::Agent => {
-            return Err(AppError::Other(
-                "SSH agent auth is not supported yet".into(),
-            ))
+    let auth = resolve_auth(&site_id, &site.auth, vault.inner())?;
+
+    // Resolve the ProxyJump chain (TM-9): each entry is the id of another saved
+    // site whose own auth/secret is used for that hop. Self-references are
+    // skipped to avoid a trivial loop.
+    let mut jumps = Vec::new();
+    for jump_id in &site.proxy_jump {
+        if jump_id == &site_id {
+            continue;
         }
-    };
+        let j = store.get(jump_id)?;
+        let jauth = resolve_auth(&j.id, &j.auth, vault.inner())?;
+        jumps.push(HopRequest {
+            host: j.host,
+            port: j.port,
+            username: j.username,
+            auth: jauth,
+        });
+    }
 
     let req = ConnectRequest {
         host: site.host,
         port: site.port,
         username: site.username,
         auth,
+        jumps,
         cols,
         rows,
     };
@@ -285,26 +317,38 @@ pub fn site_update(id: String, input: SiteInput, store: State<'_, SiteStore>) ->
     store.update(&id, input)
 }
 
-/// Delete a site and its stored secrets.
+/// Delete a site and its stored secrets (keychain + vault).
 #[tauri::command]
-pub fn site_delete(id: String, store: State<'_, SiteStore>) -> AppResult<()> {
+pub fn site_delete(
+    id: String,
+    store: State<'_, SiteStore>,
+    vault: State<'_, VaultState>,
+) -> AppResult<()> {
     store.delete(&id)?;
-    let _ = secrets::delete_all(&id);
+    let _ = secrets::delete_all_pref(&id, vault.inner());
     Ok(())
 }
 
-// --- Secrets (AK-1) ---
+// --- Secrets (AK-1; vault fallback AK-4) ---
 
-/// Store/replace a site's password in the OS keychain.
+/// Store/replace a site's password (OS keychain, or the vault as fallback).
 #[tauri::command]
-pub fn site_set_password(site_id: String, password: String) -> AppResult<()> {
-    secrets::set(SecretKind::Password, &site_id, &password)
+pub fn site_set_password(
+    site_id: String,
+    password: String,
+    vault: State<'_, VaultState>,
+) -> AppResult<()> {
+    secrets::set_pref(SecretKind::Password, &site_id, &password, vault.inner())
 }
 
-/// Store/replace a site's private-key passphrase in the OS keychain.
+/// Store/replace a site's private-key passphrase (keychain, or vault fallback).
 #[tauri::command]
-pub fn site_set_passphrase(site_id: String, passphrase: String) -> AppResult<()> {
-    secrets::set(SecretKind::Passphrase, &site_id, &passphrase)
+pub fn site_set_passphrase(
+    site_id: String,
+    passphrase: String,
+    vault: State<'_, VaultState>,
+) -> AppResult<()> {
+    secrets::set_pref(SecretKind::Passphrase, &site_id, &passphrase, vault.inner())
 }
 
 // --- Import / export (SM-7, SM-8) ---
@@ -330,6 +374,38 @@ pub fn import_ssh_config(path: Option<String>) -> AppResult<Vec<ImportedSite>> {
     let text = fs::read_to_string(&path)
         .map_err(|e| AppError::Other(format!("cannot read {}: {e}", path.display())))?;
     Ok(importer::parse_openssh_config(&text))
+}
+
+/// Read a text file, decoding a UTF-16LE or UTF-8 BOM if present. `regedit`
+/// exports `.reg` files as UTF-16LE, so PuTTY imports need this rather than the
+/// strict UTF-8 `fs::read_to_string`.
+fn read_text_loose(path: &std::path::Path) -> AppResult<String> {
+    let bytes = fs::read(path)
+        .map_err(|e| AppError::Other(format!("cannot read {}: {e}", path.display())))?;
+    if bytes.len() >= 2 && bytes[0] == 0xFF && bytes[1] == 0xFE {
+        let units: Vec<u16> = bytes[2..]
+            .chunks_exact(2)
+            .map(|c| u16::from_le_bytes([c[0], c[1]]))
+            .collect();
+        Ok(String::from_utf16_lossy(&units))
+    } else if bytes.len() >= 3 && bytes[0] == 0xEF && bytes[1] == 0xBB && bytes[2] == 0xBF {
+        Ok(String::from_utf8_lossy(&bytes[3..]).into_owned())
+    } else {
+        Ok(String::from_utf8_lossy(&bytes).into_owned())
+    }
+}
+
+/// Read saved PuTTY sessions directly from the Windows registry (SM-7).
+#[tauri::command]
+pub fn import_putty_registry() -> AppResult<Vec<ImportedSite>> {
+    importer::read_putty_registry()
+}
+
+/// Parse a `regedit` `.reg` export of PuTTY sessions into review candidates (SM-7).
+#[tauri::command]
+pub fn import_putty_reg(path: String) -> AppResult<Vec<ImportedSite>> {
+    let text = read_text_loose(std::path::Path::new(&path))?;
+    Ok(importer::parse_putty_reg(&text))
 }
 
 /// Read an AmmaXterm backup file into review candidates (SM-8 restore).

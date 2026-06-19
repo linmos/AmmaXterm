@@ -42,6 +42,8 @@ tauri-plugin-window-state = "2"
 # OS keychain — per-platform native backends (AK-1).
 [target.'cfg(windows)'.dependencies]
 keyring = { version = "3", features = ["windows-native"] }
+# Read saved PuTTY sessions from the registry (SM-7, Windows-only).
+winreg = "0.55"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 keyring = { version = "3", features = ["apple-native"] }

@@ -188,6 +188,16 @@ class AppState {
 		return invoke<ImportedSite[]>('import_sites_backup', { path });
 	}
 
+	/** Read saved PuTTY sessions from the Windows registry (SM-7). */
+	async importPuttyRegistry(): Promise<ImportedSite[]> {
+		return invoke<ImportedSite[]>('import_putty_registry');
+	}
+
+	/** Parse a PuTTY `.reg` export into review candidates (SM-7). */
+	async importPuttyReg(path: string): Promise<ImportedSite[]> {
+		return invoke<ImportedSite[]>('import_putty_reg', { path });
+	}
+
 	/** Write all saved sites to a backup file (no secrets). */
 	async exportSites(path: string): Promise<void> {
 		await invoke('export_sites', { path });
@@ -252,7 +262,10 @@ class AppState {
 			username: site.username,
 			auth: site.auth,
 			group,
-			tags: site.tags
+			tags: site.tags,
+			tunnels: site.tunnels,
+			proxyJump: site.proxyJump,
+			overrides: site.overrides
 		};
 		await this.updateSite(site.id, input);
 	}

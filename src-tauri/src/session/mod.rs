@@ -23,6 +23,9 @@ struct Session {
     commands: mpsc::Sender<SessionCommand>,
     handle: Arc<SshHandle>,
     remote_forwards: RemoteForwards,
+    /// ProxyJump hop connections kept alive for this session's lifetime (TM-9);
+    /// dropped/disconnected when the session closes.
+    jump_handles: Vec<SshHandle>,
 }
 
 /// Tracks all active sessions by id.
@@ -53,7 +56,7 @@ impl SessionManager {
             app: app.clone(),
             prompts,
         };
-        let (handle, channel, remote_forwards) =
+        let (handle, channel, remote_forwards, jump_handles) =
             ssh::open_shell(&req, known_hosts, Some(prompter), keepalive_secs).await?;
         let id = format!("session-{}", self.counter.fetch_add(1, Ordering::Relaxed));
         let (tx, rx) = mpsc::channel(64);
@@ -64,6 +67,7 @@ impl SessionManager {
                 commands: tx,
                 handle: Arc::new(handle),
                 remote_forwards,
+                jump_handles,
             },
         );
         Ok(id)
@@ -137,6 +141,10 @@ impl SessionManager {
                 .handle
                 .disconnect(Disconnect::ByApplication, "", "")
                 .await;
+            // Tear down ProxyJump hops from the target back toward the client.
+            for jump in session.jump_handles.iter().rev() {
+                let _ = jump.disconnect(Disconnect::ByApplication, "", "").await;
+            }
         }
         Ok(())
     }

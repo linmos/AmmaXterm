@@ -62,6 +62,8 @@ pub fn run() {
             commands::site_set_passphrase,
             commands::import_ssh_config,
             commands::import_sites_backup,
+            commands::import_putty_registry,
+            commands::import_putty_reg,
             commands::export_sites,
             commands::settings_get,
             commands::settings_set,

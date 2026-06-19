@@ -48,6 +48,7 @@ impl ConnectOptions {
             port: self.port,
             username: self.username,
             auth: AuthCredential::Password(self.password),
+            jumps: Vec::new(),
             cols: self.cols,
             rows: self.rows,
         }
@@ -64,12 +65,24 @@ pub(crate) enum AuthCredential {
     KeyboardInteractive(String),
 }
 
-/// A fully-resolved connection request.
+/// One hop in a ProxyJump chain (TM-9): a resolved jump host the connection
+/// tunnels through before reaching the final target.
+pub(crate) struct HopRequest {
+    pub host: String,
+    pub port: u16,
+    pub username: String,
+    pub auth: AuthCredential,
+}
+
+/// A fully-resolved connection request. `jumps` (if any) are dialed in order,
+/// each tunnelled through the previous, with the final target reached over the
+/// last jump (TM-9 ProxyJump).
 pub(crate) struct ConnectRequest {
     pub host: String,
     pub port: u16,
     pub username: String,
     pub auth: AuthCredential,
+    pub jumps: Vec<HopRequest>,
     pub cols: u32,
     pub rows: u32,
 }
@@ -109,6 +122,8 @@ impl HostKeyPrompts {
 }
 
 /// Lets the host-key handler prompt the frontend and await the user's decision.
+/// Cloneable so each hop in a ProxyJump chain gets its own prompter (TM-9).
+#[derive(Clone)]
 pub(crate) struct HostKeyPrompter {
     pub app: AppHandle,
     pub prompts: HostKeyPrompts,
@@ -301,55 +316,140 @@ fn forget_host(path: &PathBuf, host: &str, port: u16) -> std::io::Result<()> {
 /// `keepalive_secs` (0 = off) sets the SSH keepalive interval; if the peer stops
 /// answering, russh drops the connection and the session emits `ssh://closed`,
 /// which the frontend can act on to reconnect (TM-8).
+///
+/// When `req.jumps` is non-empty the connection is tunnelled through each jump
+/// host in order (TM-9 ProxyJump). The returned `Vec<SshHandle>` holds the jump
+/// connections, which the caller must keep alive for the session's lifetime
+/// (dropping them tears down the tunnel underneath the target).
 pub(crate) async fn open_shell(
     req: &ConnectRequest,
     known_hosts: PathBuf,
     prompter: Option<HostKeyPrompter>,
     keepalive_secs: u32,
-) -> AppResult<(SshHandle, russh::Channel<Msg>, RemoteForwards)> {
+) -> AppResult<(
+    SshHandle,
+    russh::Channel<Msg>,
+    RemoteForwards,
+    Vec<SshHandle>,
+)> {
     let mut cfg = client::Config::default();
     if keepalive_secs > 0 {
         cfg.keepalive_interval = Some(Duration::from_secs(keepalive_secs as u64));
     }
     let config = Arc::new(cfg);
-    let report = HostKeyReport::default();
     let remote_forwards: RemoteForwards = Arc::new(Mutex::new(HashMap::new()));
-    let handler = ClientHandler {
-        host: req.host.clone(),
-        port: req.port,
-        known_hosts,
-        prompter,
-        report: report.clone(),
-        remote_forwards: remote_forwards.clone(),
-    };
 
-    let mut handle = match client::connect(config, (req.host.as_str(), req.port), handler).await {
-        Ok(h) => h,
-        Err(e) => {
-            if let Some(msg) = report.0.lock().unwrap().take() {
-                return Err(AppError::HostKey(msg));
-            }
-            return Err(AppError::Connect(e.to_string()));
+    // Walk jump hosts (if any), then the final target. Each node is dialed over
+    // a direct-tcpip channel on the previous node's handle; the first directly.
+    let mut jump_handles: Vec<SshHandle> = Vec::new();
+    let last = req.jumps.len(); // index of the target node in the virtual chain
+    let mut prev: Option<SshHandle> = None;
+
+    for idx in 0..=last {
+        let (host, port, username, auth) = if idx < last {
+            let j = &req.jumps[idx];
+            (j.host.as_str(), j.port, j.username.as_str(), &j.auth)
+        } else {
+            (
+                req.host.as_str(),
+                req.port,
+                req.username.as_str(),
+                &req.auth,
+            )
+        };
+
+        // Tunnel through the previous hop, or dial directly for the first node.
+        let over = match prev.as_ref() {
+            Some(h) => Some(
+                h.channel_open_direct_tcpip(host.to_string(), port as u32, "127.0.0.1", 0)
+                    .await
+                    .map_err(|e| {
+                        AppError::Connect(format!(
+                            "could not open jump channel to {host}:{port}: {e}"
+                        ))
+                    })?,
+            ),
+            None => None,
+        };
+
+        // Only the final target needs the real remote-forward registry (-R).
+        let rf = if idx == last {
+            remote_forwards.clone()
+        } else {
+            Arc::new(Mutex::new(HashMap::new()))
+        };
+
+        let mut handle = connect_node(
+            config.clone(),
+            host,
+            port,
+            known_hosts.clone(),
+            prompter.clone(),
+            rf,
+            over,
+        )
+        .await?;
+        authenticate(&mut handle, username, auth).await?;
+
+        if let Some(old) = prev.replace(handle) {
+            jump_handles.push(old);
         }
-    };
+    }
 
-    authenticate(&mut handle, req).await?;
-
+    let handle = prev.expect("chain always contains the target node");
     let channel = handle.channel_open_session().await?;
     channel
         .request_pty(false, "xterm-256color", req.cols, req.rows, 0, 0, &[])
         .await?;
     channel.request_shell(true).await?;
 
-    Ok((handle, channel, remote_forwards))
+    Ok((handle, channel, remote_forwards, jump_handles))
 }
 
-/// Authenticate using the requested method (TM-2).
-async fn authenticate(handle: &mut SshHandle, req: &ConnectRequest) -> AppResult<()> {
-    match &req.auth {
+/// Connect (TCP or over a jump channel) and verify the host key for one node in
+/// the chain. Auth is performed separately by the caller.
+async fn connect_node(
+    config: Arc<client::Config>,
+    host: &str,
+    port: u16,
+    known_hosts: PathBuf,
+    prompter: Option<HostKeyPrompter>,
+    remote_forwards: RemoteForwards,
+    over: Option<russh::Channel<Msg>>,
+) -> AppResult<SshHandle> {
+    let report = HostKeyReport::default();
+    let handler = ClientHandler {
+        host: host.to_string(),
+        port,
+        known_hosts,
+        prompter,
+        report: report.clone(),
+        remote_forwards,
+    };
+
+    let result = match over {
+        Some(channel) => client::connect_stream(config, channel.into_stream(), handler).await,
+        None => client::connect(config, (host, port), handler).await,
+    };
+    result.map_err(|e| {
+        if let Some(msg) = report.0.lock().unwrap().take() {
+            AppError::HostKey(msg)
+        } else {
+            AppError::Connect(e.to_string())
+        }
+    })
+}
+
+/// Authenticate `handle` as `username` using the requested method (TM-2).
+async fn authenticate(
+    handle: &mut SshHandle,
+    username: &str,
+    auth: &AuthCredential,
+) -> AppResult<()> {
+    match auth {
         AuthCredential::Password(password) => {
             let ok = handle
-                .authenticate_password(req.username.clone(), password.clone())
+                .authenticate_password(username.to_string(), password.clone())
                 .await?
                 .success();
             if !ok {
@@ -365,7 +465,7 @@ async fn authenticate(handle: &mut SshHandle, req: &ConnectRequest) -> AppResult
             let hash = handle.best_supported_rsa_hash().await?.flatten();
             let key = russh::keys::PrivateKeyWithHashAlg::new(Arc::new(key), hash);
             let ok = handle
-                .authenticate_publickey(req.username.clone(), key)
+                .authenticate_publickey(username.to_string(), key)
                 .await?
                 .success();
             if !ok {
@@ -374,7 +474,7 @@ async fn authenticate(handle: &mut SshHandle, req: &ConnectRequest) -> AppResult
         }
         AuthCredential::KeyboardInteractive(secret) => {
             let mut response = handle
-                .authenticate_keyboard_interactive_start(req.username.clone(), None)
+                .authenticate_keyboard_interactive_start(username.to_string(), None)
                 .await?;
             loop {
                 match response {
@@ -490,6 +590,7 @@ mod tests {
             port: 2222,
             username: "amos".into(),
             auth: AuthCredential::Password("ammax123".into()),
+            jumps: Vec::new(),
             cols: 80,
             rows: 24,
         }
@@ -502,9 +603,10 @@ mod tests {
         let _ = std::fs::remove_file(&known_hosts);
 
         // 1) Connect (TOFU learns the key — no prompter in tests) + open a shell.
-        let (handle, mut channel, _fwd) = open_shell(&test_request(), known_hosts.clone(), None, 0)
-            .await
-            .expect("open_shell should succeed against the Docker SSH server");
+        let (handle, mut channel, _fwd, _jumps) =
+            open_shell(&test_request(), known_hosts.clone(), None, 0)
+                .await
+                .expect("open_shell should succeed against the Docker SSH server");
 
         // 2) Shell streaming: send a command and read until the marker comes back.
         channel
@@ -556,9 +658,10 @@ mod tests {
         );
 
         // 4) Reconnect: the learned key must verify (match path, no re-learn).
-        let (handle2, _ch2, _fwd2) = open_shell(&test_request(), known_hosts.clone(), None, 0)
-            .await
-            .expect("reconnect should pass host-key verification");
+        let (handle2, _ch2, _fwd2, _jumps2) =
+            open_shell(&test_request(), known_hosts.clone(), None, 0)
+                .await
+                .expect("reconnect should pass host-key verification");
         let kh = std::fs::read_to_string(&known_hosts).unwrap();
         let key_lines = kh
             .lines()
