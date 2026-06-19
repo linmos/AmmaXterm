@@ -238,6 +238,8 @@ class AppState {
 				onOutput: tab.channel
 			});
 			tab.status = 'connected';
+			// The site may auto-establish tunnels on connect (PF-4) — reflect them.
+			if (site.tunnels.length) void this.refreshTunnels();
 		} catch (err) {
 			tab.status = 'error';
 			tab.error = errMessage(err);

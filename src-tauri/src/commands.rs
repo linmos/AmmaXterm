@@ -65,10 +65,12 @@ pub async fn site_connect(
     manager: State<'_, SessionManager>,
     prompts: State<'_, HostKeyPrompts>,
     settings: State<'_, SettingsStore>,
+    tunnels: State<'_, TunnelManager>,
 ) -> AppResult<String> {
     let site = store.get(&site_id)?;
     let known_hosts = config_dir(&app)?.join("known_hosts");
     let keepalive = settings.get().keepalive_secs;
+    let site_tunnels = site.tunnels.clone();
 
     let auth = match site.auth {
         AuthMethod::Password => AuthCredential::Password(
@@ -98,7 +100,7 @@ pub async fn site_connect(
         cols,
         rows,
     };
-    manager
+    let id = manager
         .connect(
             app,
             prompts.inner().clone(),
@@ -107,7 +109,18 @@ pub async fn site_connect(
             keepalive,
             on_output,
         )
-        .await
+        .await?;
+
+    // Auto-establish the site's saved tunnels (PF-4). A tunnel that fails to
+    // bind (e.g. port in use) is skipped rather than failing the connection.
+    if !site_tunnels.is_empty() {
+        if let Ok(handle) = manager.handle(&id) {
+            for spec in site_tunnels {
+                let _ = tunnels.open(id.clone(), spec, handle.clone()).await;
+            }
+        }
+    }
+    Ok(id)
 }
 
 /// Send user input (keystrokes / paste) to a session's shell.

@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::error::{AppError, AppResult};
+use crate::tunnel::TunnelSpec;
 
 const SCHEMA_VERSION: u32 = 1;
 
@@ -48,6 +49,9 @@ pub struct Site {
     pub group: Option<String>,
     #[serde(default)]
     pub tags: Vec<String>,
+    /// Tunnels auto-established when this site connects (PF-4).
+    #[serde(default)]
+    pub tunnels: Vec<TunnelSpec>,
 }
 
 /// Create/update payload from the frontend (id is assigned by the store).
@@ -65,6 +69,8 @@ pub struct SiteInput {
     pub group: Option<String>,
     #[serde(default)]
     pub tags: Vec<String>,
+    #[serde(default)]
+    pub tunnels: Vec<TunnelSpec>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -135,6 +141,7 @@ impl SiteStore {
             auth: input.auth,
             group: input.group,
             tags: input.tags,
+            tunnels: input.tunnels,
         };
         let mut guard = self.sites.lock().unwrap();
         guard.push(site.clone());
@@ -161,6 +168,7 @@ impl SiteStore {
             auth: input.auth,
             group: input.group,
             tags: input.tags,
+            tunnels: input.tunnels,
         };
         let updated = guard[idx].clone();
         if let Err(e) = self.persist(&guard) {

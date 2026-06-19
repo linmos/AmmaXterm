@@ -5,6 +5,8 @@ export type AuthMethod =
 	| { type: 'keyboardInteractive' }
 	| { type: 'agent' };
 
+import type { TunnelSpec } from '../tunnel/types';
+
 /** A saved connection (mirrors the Rust `Site`). */
 export interface Site {
 	id: string;
@@ -15,6 +17,7 @@ export interface Site {
 	auth: AuthMethod;
 	group: string | null;
 	tags: string[];
+	tunnels: TunnelSpec[];
 }
 
 /** Create/update payload (mirrors the Rust `SiteInput`). */
@@ -26,6 +29,7 @@ export interface SiteInput {
 	auth: AuthMethod;
 	group?: string | null;
 	tags?: string[];
+	tunnels?: TunnelSpec[];
 }
 
 /** A connection candidate from an import source (mirrors Rust `ImportedSite`). */

@@ -3,6 +3,7 @@
 	import { app } from '$lib/state.svelte';
 	import { i18n } from '$lib/i18n.svelte';
 	import type { AuthMethod, Site, SiteInput } from './types';
+	import type { TunnelSpec } from '../tunnel/types';
 
 	interface Props {
 		site?: Site;
@@ -21,7 +22,8 @@
 		authType: (site?.auth.type ?? 'password') as AuthMethod['type'],
 		keyPath: site && site.auth.type === 'publicKey' ? site.auth.keyPath : '',
 		group: site?.group ?? '',
-		tags: (site?.tags ?? []).join(', ')
+		tags: (site?.tags ?? []).join(', '),
+		tunnels: (site?.tunnels ?? []).map((t) => ({ ...t }))
 	}));
 
 	let name = $state(init.name);
@@ -32,9 +34,39 @@
 	let keyPath = $state(init.keyPath);
 	let group = $state(init.group);
 	let tags = $state(init.tags);
+	let tunnels = $state<TunnelSpec[]>(init.tunnels);
 	let password = $state('');
 	let saving = $state(false);
 	let errorMsg = $state<string | undefined>(undefined);
+
+	// Inline "add tunnel" row.
+	let tKind = $state('local');
+	let tListen = $state(8080);
+	let tDestHost = $state('');
+	let tDestPort = $state(80);
+
+	function addTunnel() {
+		if (!tListen) return;
+		if (tKind === 'local' && (!tDestHost || !tDestPort)) return;
+		tunnels = [
+			...tunnels,
+			{
+				kind: tKind,
+				listenPort: Number(tListen),
+				destHost: tKind === 'local' ? tDestHost : '',
+				destPort: tKind === 'local' ? Number(tDestPort) : 0
+			}
+		];
+		tDestHost = '';
+	}
+	function removeTunnel(i: number) {
+		tunnels = tunnels.filter((_, idx) => idx !== i);
+	}
+	function tunnelLabel(t: TunnelSpec): string {
+		return t.kind === 'dynamic'
+			? `D · SOCKS5 :${t.listenPort}`
+			: `L · :${t.listenPort} → ${t.destHost}:${t.destPort}`;
+	}
 
 	// Existing group names for the datalist (autocomplete), de-duplicated.
 	const groupOptions = $derived(
@@ -68,7 +100,8 @@
 			tags: tags
 				.split(',')
 				.map((t) => t.trim())
-				.filter(Boolean)
+				.filter(Boolean),
+			tunnels
 		};
 		try {
 			if (editing && site) await app.updateSite(site.id, input, password || undefined);
@@ -136,6 +169,28 @@
 			<input bind:value={tags} placeholder="prod, db" autocomplete="off" />
 		</label>
 
+		<div class="tunnels">
+			<div class="tlabel">{i18n.t('site.tunnels')} <span class="hint">{i18n.t('site.tunnelsHint')}</span></div>
+			{#each tunnels as t, i (i)}
+				<div class="trow">
+					<span class="tinfo">{tunnelLabel(t)}</span>
+					<button type="button" class="tdel" onclick={() => removeTunnel(i)}>×</button>
+				</div>
+			{/each}
+			<div class="tadd">
+				<select bind:value={tKind}>
+					<option value="local">{i18n.t('tunnel.local')}</option>
+					<option value="dynamic">{i18n.t('tunnel.dynamic')}</option>
+				</select>
+				<input class="tport" type="number" min="1" max="65535" bind:value={tListen} title={i18n.t('tunnel.listenPort')} />
+				{#if tKind === 'local'}
+					<input class="thost" bind:value={tDestHost} placeholder={i18n.t('tunnel.destHost')} />
+					<input class="tport" type="number" min="1" max="65535" bind:value={tDestPort} title={i18n.t('tunnel.destPort')} />
+				{/if}
+				<button type="button" class="tadd-btn" onclick={addTunnel}>＋</button>
+			</div>
+		</div>
+
 		{#if errorMsg}<p class="error">{errorMsg}</p>{/if}
 
 		<div class="actions">
@@ -199,6 +254,63 @@
 	}
 	.hint {
 		opacity: 0.6;
+	}
+	.tunnels {
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
+		padding: 8px;
+		border: 1px solid #333;
+		border-radius: 6px;
+	}
+	.tlabel {
+		font-size: 12px;
+		opacity: 0.9;
+	}
+	.trow {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		padding: 4px 6px;
+		border-radius: 5px;
+		background: #1e1e1e;
+	}
+	.tinfo {
+		flex: 1;
+		min-width: 0;
+		font-size: 12px;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+	.tdel {
+		padding: 0 7px;
+		background: transparent;
+		border: none;
+		color: #f48771;
+		font-size: 15px;
+		cursor: pointer;
+	}
+	.tadd {
+		display: flex;
+		gap: 4px;
+		align-items: center;
+	}
+	.tadd select {
+		flex: 0 0 auto;
+		padding: 6px;
+		font-size: 12px;
+	}
+	.tadd .thost {
+		flex: 1;
+		min-width: 0;
+	}
+	.tadd .tport {
+		width: 64px;
+	}
+	.tadd-btn {
+		flex: 0 0 auto;
+		padding: 6px 10px;
 	}
 	.actions {
 		display: flex;
