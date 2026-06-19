@@ -71,6 +71,8 @@ pub fn run() {
             commands::transfer_download,
             commands::transfer_list,
             commands::transfer_cancel,
+            commands::transfer_pause,
+            commands::transfer_resume,
             commands::transfer_retry,
             commands::transfer_clear,
             commands::local_list,

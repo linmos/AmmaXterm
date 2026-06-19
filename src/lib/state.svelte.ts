@@ -154,6 +154,16 @@ class AppState {
 		await this.refreshTransfers();
 	}
 
+	async pauseTransfer(id: string) {
+		await invoke('transfer_pause', { id }).catch(() => {});
+		await this.refreshTransfers();
+	}
+
+	async resumeTransfer(id: string) {
+		await invoke('transfer_resume', { id }).catch(() => {});
+		await this.refreshTransfers();
+	}
+
 	async retryTransfer(id: string) {
 		await invoke('transfer_retry', { id }).catch(() => {});
 		await this.refreshTransfers();

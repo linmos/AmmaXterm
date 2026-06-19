@@ -4,12 +4,13 @@
 //! persist one `SftpSession` per connection and add a transfer queue, resume,
 //! and progress reporting (FT-4, FT-7, FT-9).
 
+use std::io::SeekFrom;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 use russh_sftp::client::SftpSession;
 use russh_sftp::protocol::OpenFlags;
 use serde::Serialize;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 
 use crate::error::{AppError, AppResult};
 use crate::ssh::SshHandle;
@@ -79,26 +80,36 @@ pub async fn remote_size(handle: &SshHandle, path: &str) -> AppResult<u64> {
 }
 
 /// Stream a local file to the remote in chunks, updating `done` and stopping
-/// promptly if `cancel` is set (FT-4 progress + cancel).
+/// promptly if `cancel` or `pause` is set. `offset` > 0 resumes an interrupted
+/// upload from that byte (FT-4 progress/cancel, FT-7 resume).
+#[allow(clippy::too_many_arguments)]
 pub async fn upload_streaming(
     handle: &SshHandle,
     local_path: &str,
     remote_path: &str,
     done: &AtomicU64,
     cancel: &AtomicBool,
+    pause: &AtomicBool,
+    offset: u64,
 ) -> AppResult<()> {
     let mut local = tokio::fs::File::open(local_path).await?;
+    let flags = if offset > 0 {
+        OpenFlags::CREATE | OpenFlags::WRITE
+    } else {
+        OpenFlags::CREATE | OpenFlags::TRUNCATE | OpenFlags::WRITE
+    };
     let sftp = open(handle).await?;
     let mut remote = sftp
-        .open_with_flags(
-            remote_path,
-            OpenFlags::CREATE | OpenFlags::TRUNCATE | OpenFlags::WRITE,
-        )
+        .open_with_flags(remote_path, flags)
         .await
         .map_err(sftp_err)?;
+    if offset > 0 {
+        local.seek(SeekFrom::Start(offset)).await?;
+        remote.seek(SeekFrom::Start(offset)).await?;
+    }
     let mut buf = vec![0u8; CHUNK];
     loop {
-        if cancel.load(Ordering::Relaxed) {
+        if cancel.load(Ordering::Relaxed) || pause.load(Ordering::Relaxed) {
             break;
         }
         let n = local.read(&mut buf).await?;
@@ -112,23 +123,37 @@ pub async fn upload_streaming(
     Ok(())
 }
 
-/// Stream a remote file to a local path in chunks (FT-4 progress + cancel).
+/// Stream a remote file to a local path in chunks. `offset` > 0 resumes an
+/// interrupted download, appending from that byte (FT-4 + FT-7).
+#[allow(clippy::too_many_arguments)]
 pub async fn download_streaming(
     handle: &SshHandle,
     remote_path: &str,
     local_path: &str,
     done: &AtomicU64,
     cancel: &AtomicBool,
+    pause: &AtomicBool,
+    offset: u64,
 ) -> AppResult<()> {
     let sftp = open(handle).await?;
     let mut remote = sftp
         .open_with_flags(remote_path, OpenFlags::READ)
         .await
         .map_err(sftp_err)?;
-    let mut local = tokio::fs::File::create(local_path).await?;
+    let mut local = if offset > 0 {
+        let mut f = tokio::fs::OpenOptions::new()
+            .write(true)
+            .open(local_path)
+            .await?;
+        f.seek(SeekFrom::Start(offset)).await?;
+        remote.seek(SeekFrom::Start(offset)).await?;
+        f
+    } else {
+        tokio::fs::File::create(local_path).await?
+    };
     let mut buf = vec![0u8; CHUNK];
     loop {
-        if cancel.load(Ordering::Relaxed) {
+        if cancel.load(Ordering::Relaxed) || pause.load(Ordering::Relaxed) {
             break;
         }
         let n = remote.read(&mut buf).await?;

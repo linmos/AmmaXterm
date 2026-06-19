@@ -25,6 +25,7 @@ struct Transfer {
     total: u64,
     done: Arc<AtomicU64>,
     cancel: Arc<AtomicBool>,
+    pause: Arc<AtomicBool>,
     status: Arc<Mutex<(String, Option<String>)>>, // (state, error)
 }
 
@@ -79,11 +80,12 @@ impl TransferManager {
             total,
             done: Arc::new(AtomicU64::new(0)),
             cancel: Arc::new(AtomicBool::new(false)),
+            pause: Arc::new(AtomicBool::new(false)),
             status: Arc::new(Mutex::new(("active".into(), None))),
         });
         let id = self.next_id();
         self.items.lock().unwrap().insert(id.clone(), t.clone());
-        spawn_run(t, handle);
+        spawn_run(t, handle, false);
         Ok(id)
     }
 
@@ -108,11 +110,12 @@ impl TransferManager {
             total,
             done: Arc::new(AtomicU64::new(0)),
             cancel: Arc::new(AtomicBool::new(false)),
+            pause: Arc::new(AtomicBool::new(false)),
             status: Arc::new(Mutex::new(("active".into(), None))),
         });
         let id = self.next_id();
         self.items.lock().unwrap().insert(id.clone(), t.clone());
-        spawn_run(t, handle);
+        spawn_run(t, handle, false);
         Ok(id)
     }
 
@@ -122,18 +125,33 @@ impl TransferManager {
         }
     }
 
-    /// Re-run a finished/canceled/errored transfer from the start, reusing the
-    /// session's current connection (fails if it has disconnected).
+    /// Pause an active transfer (FT-7); progress is kept for a later resume.
+    pub fn pause(&self, id: &str) {
+        if let Some(t) = self.items.lock().unwrap().get(id) {
+            t.pause.store(true, Ordering::Relaxed);
+        }
+    }
+
+    /// Resume a paused transfer, continuing from the bytes already transferred.
+    pub async fn resume(&self, id: &str, manager: &SessionManager) -> AppResult<()> {
+        self.restart(id, manager, true).await
+    }
+
+    /// Retry a canceled/errored transfer, continuing from any partial bytes.
     pub async fn retry(&self, id: &str, manager: &SessionManager) -> AppResult<()> {
+        self.restart(id, manager, true).await
+    }
+
+    async fn restart(&self, id: &str, manager: &SessionManager, resume: bool) -> AppResult<()> {
         let t = match self.items.lock().unwrap().get(id) {
             Some(t) => t.clone(),
             None => return Ok(()),
         };
         let handle = manager.handle(&t.session_id)?;
-        t.done.store(0, Ordering::Relaxed);
         t.cancel.store(false, Ordering::Relaxed);
+        t.pause.store(false, Ordering::Relaxed);
         *t.status.lock().unwrap() = ("active".into(), None);
-        spawn_run(t, handle);
+        spawn_run(t, handle, resume);
         Ok(())
     }
 
@@ -170,37 +188,85 @@ impl TransferManager {
     }
 }
 
-/// Spawn the transfer task; on completion it records done/canceled/error.
-fn spawn_run(t: Arc<Transfer>, handle: Arc<SshHandle>) {
+const MAX_RETRIES: u32 = 3;
+
+/// Bytes already durably present on the receiving side, used as the resume
+/// offset: the remote file size for uploads, the local file size for downloads.
+async fn resume_offset(t: &Transfer, handle: &SshHandle) -> u64 {
+    if t.direction == "upload" {
+        crate::sftp::remote_size(handle, &t.remote_path)
+            .await
+            .unwrap_or(0)
+    } else {
+        tokio::fs::metadata(&t.local_path)
+            .await
+            .map(|m| m.len())
+            .unwrap_or(0)
+    }
+}
+
+/// Spawn the transfer task: streams with auto-retry (resuming from the already
+/// transferred bytes) and honours cancel/pause. Records the final status.
+fn spawn_run(t: Arc<Transfer>, handle: Arc<SshHandle>, resume: bool) {
     tauri::async_runtime::spawn(async move {
-        let result = if t.direction == "upload" {
-            crate::sftp::upload_streaming(
-                &handle,
-                &t.local_path,
-                &t.remote_path,
-                &t.done,
-                &t.cancel,
-            )
-            .await
-        } else {
-            crate::sftp::download_streaming(
-                &handle,
-                &t.remote_path,
-                &t.local_path,
-                &t.done,
-                &t.cancel,
-            )
-            .await
-        };
-        let next = if t.cancel.load(Ordering::Relaxed) {
-            ("canceled".to_string(), None)
-        } else {
-            match result {
-                Ok(()) => ("done".to_string(), None),
-                Err(e) => ("error".to_string(), Some(e.to_string())),
+        let mut attempt = 0u32;
+        loop {
+            let offset = if attempt == 0 && !resume {
+                0
+            } else {
+                resume_offset(&t, &handle).await
+            };
+            t.done.store(offset, Ordering::Relaxed);
+
+            let result = if t.direction == "upload" {
+                crate::sftp::upload_streaming(
+                    &handle,
+                    &t.local_path,
+                    &t.remote_path,
+                    &t.done,
+                    &t.cancel,
+                    &t.pause,
+                    offset,
+                )
+                .await
+            } else {
+                crate::sftp::download_streaming(
+                    &handle,
+                    &t.remote_path,
+                    &t.local_path,
+                    &t.done,
+                    &t.cancel,
+                    &t.pause,
+                    offset,
+                )
+                .await
+            };
+
+            // Stop reasons take priority over the stream's Ok/Err.
+            if t.cancel.load(Ordering::Relaxed) {
+                *t.status.lock().unwrap() = ("canceled".into(), None);
+                return;
             }
-        };
-        *t.status.lock().unwrap() = next;
+            if t.pause.load(Ordering::Relaxed) {
+                *t.status.lock().unwrap() = ("paused".into(), None);
+                return;
+            }
+            match result {
+                Ok(()) => {
+                    *t.status.lock().unwrap() = ("done".into(), None);
+                    return;
+                }
+                Err(e) => {
+                    attempt += 1;
+                    if attempt > MAX_RETRIES {
+                        *t.status.lock().unwrap() = ("error".into(), Some(e.to_string()));
+                        return;
+                    }
+                    // Exponential backoff before resuming.
+                    tokio::time::sleep(std::time::Duration::from_secs(1u64 << attempt)).await;
+                }
+            }
+        }
     });
 }
 

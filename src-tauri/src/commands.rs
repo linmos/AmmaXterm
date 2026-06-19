@@ -573,7 +573,23 @@ pub fn transfer_cancel(id: String, transfers: State<'_, TransferManager>) {
     transfers.cancel(&id);
 }
 
-/// Retry a finished/canceled/errored transfer from the start.
+/// Pause an active transfer (FT-7); progress is kept for resume.
+#[tauri::command]
+pub fn transfer_pause(id: String, transfers: State<'_, TransferManager>) {
+    transfers.pause(&id);
+}
+
+/// Resume a paused transfer, continuing from the transferred bytes (FT-7).
+#[tauri::command]
+pub async fn transfer_resume(
+    id: String,
+    manager: State<'_, SessionManager>,
+    transfers: State<'_, TransferManager>,
+) -> AppResult<()> {
+    transfers.resume(&id, &manager).await
+}
+
+/// Retry a canceled/errored transfer, resuming from any partial bytes.
 #[tauri::command]
 pub async fn transfer_retry(
     id: String,

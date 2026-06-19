@@ -67,10 +67,15 @@
 						<span class="nm" title={t.name}>{t.name}</span>
 						{#if t.status === 'active'}
 							<span class="sp">{speeds[t.id] ? `${fmtBytes(speeds[t.id])}/s` : ''}</span>
+							<button class="rt" title={i18n.t('xfer.pause')} onclick={() => app.pauseTransfer(t.id)}>⏸</button>
 							<button class="x" title={i18n.t('xfer.cancel')} onclick={() => app.cancelTransfer(t.id)}>×</button>
 						{:else if t.status === 'done'}
 							<span class="tag ok">{i18n.t('xfer.done')}</span>
 							<button class="x" title={i18n.t('xfer.clear')} onclick={() => app.clearTransfer(t.id)}>×</button>
+						{:else if t.status === 'paused'}
+							<span class="tag">{i18n.t('xfer.paused')}</span>
+							<button class="rt" title={i18n.t('xfer.resume')} onclick={() => app.resumeTransfer(t.id)}>▶</button>
+							<button class="x" title={i18n.t('xfer.cancel')} onclick={() => app.cancelTransfer(t.id)}>×</button>
 						{:else}
 							<span class="tag bad" title={t.error ?? ''}>{t.status === 'canceled' ? i18n.t('xfer.canceled') : i18n.t('xfer.error')}</span>
 							<button class="rt" title={i18n.t('xfer.retry')} onclick={() => app.retryTransfer(t.id)}>↻</button>
@@ -144,6 +149,8 @@
 		font-size: 10px;
 		padding: 0 6px;
 		border-radius: 8px;
+		background: #3a3a3a;
+		color: #ccc;
 	}
 	.tag.ok {
 		background: #1b3a2a;
