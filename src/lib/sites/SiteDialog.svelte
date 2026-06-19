@@ -45,16 +45,18 @@
 	let tDestHost = $state('');
 	let tDestPort = $state(80);
 
+	const tNeedsDest = $derived(tKind === 'local' || tKind === 'remote');
+
 	function addTunnel() {
 		if (!tListen) return;
-		if (tKind === 'local' && (!tDestHost || !tDestPort)) return;
+		if (tNeedsDest && (!tDestHost || !tDestPort)) return;
 		tunnels = [
 			...tunnels,
 			{
 				kind: tKind,
 				listenPort: Number(tListen),
-				destHost: tKind === 'local' ? tDestHost : '',
-				destPort: tKind === 'local' ? Number(tDestPort) : 0
+				destHost: tNeedsDest ? tDestHost : '',
+				destPort: tNeedsDest ? Number(tDestPort) : 0
 			}
 		];
 		tDestHost = '';
@@ -63,9 +65,9 @@
 		tunnels = tunnels.filter((_, idx) => idx !== i);
 	}
 	function tunnelLabel(t: TunnelSpec): string {
-		return t.kind === 'dynamic'
-			? `D · SOCKS5 :${t.listenPort}`
-			: `L · :${t.listenPort} → ${t.destHost}:${t.destPort}`;
+		if (t.kind === 'dynamic') return `D · SOCKS5 :${t.listenPort}`;
+		if (t.kind === 'remote') return `R · :${t.listenPort} → ${t.destHost}:${t.destPort}`;
+		return `L · :${t.listenPort} → ${t.destHost}:${t.destPort}`;
 	}
 
 	// Existing group names for the datalist (autocomplete), de-duplicated.
@@ -181,9 +183,10 @@
 				<select bind:value={tKind}>
 					<option value="local">{i18n.t('tunnel.local')}</option>
 					<option value="dynamic">{i18n.t('tunnel.dynamic')}</option>
+					<option value="remote">{i18n.t('tunnel.remote')}</option>
 				</select>
 				<input class="tport" type="number" min="1" max="65535" bind:value={tListen} title={i18n.t('tunnel.listenPort')} />
-				{#if tKind === 'local'}
+				{#if tNeedsDest}
 					<input class="thost" bind:value={tDestHost} placeholder={i18n.t('tunnel.destHost')} />
 					<input class="tport" type="number" min="1" max="65535" bind:value={tDestPort} title={i18n.t('tunnel.destPort')} />
 				{/if}

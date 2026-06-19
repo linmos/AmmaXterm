@@ -9,13 +9,16 @@
 	}
 	let { sessionId, onclose }: Props = $props();
 
-	// Local (-L) and dynamic SOCKS5 (-D) forwarding; remote (-R) arrives later.
+	// Local (-L), dynamic SOCKS5 (-D), and remote (-R) forwarding.
 	let kind = $state('local');
 	let listenPort = $state(8080);
 	let destHost = $state('');
 	let destPort = $state(80);
+	let expose = $state(false);
 	let saving = $state(false);
 	let errorMsg = $state<string | undefined>(undefined);
+
+	const needsDest = $derived(kind === 'local' || kind === 'remote');
 
 	async function save(event: Event) {
 		event.preventDefault();
@@ -24,8 +27,9 @@
 		const spec: TunnelSpec = {
 			kind,
 			listenPort: Number(listenPort),
-			destHost: kind === 'local' ? destHost : '',
-			destPort: kind === 'local' ? Number(destPort) : 0
+			destHost: needsDest ? destHost : '',
+			destPort: needsDest ? Number(destPort) : 0,
+			expose: kind === 'remote' ? expose : false
 		};
 		try {
 			await app.openTunnel(sessionId, spec);
@@ -53,18 +57,31 @@
 			<select bind:value={kind}>
 				<option value="local">{i18n.t('tunnel.local')}</option>
 				<option value="dynamic">{i18n.t('tunnel.dynamic')}</option>
+				<option value="remote">{i18n.t('tunnel.remote')}</option>
 			</select>
 		</label>
 
-		<label>{i18n.t('tunnel.listenPort')}<input type="number" min="1" max="65535" bind:value={listenPort} required /></label>
-		{#if kind === 'local'}
+		<label>
+			{kind === 'remote' ? i18n.t('tunnel.remoteBind') : i18n.t('tunnel.listenPort')}
+			<input type="number" min="1" max="65535" bind:value={listenPort} required />
+		</label>
+		{#if needsDest}
 			<div class="row">
 				<label class="grow">{i18n.t('tunnel.destHost')}<input bind:value={destHost} placeholder="localhost" required /></label>
 				<label class="port">{i18n.t('tunnel.destPort')}<input type="number" min="1" max="65535" bind:value={destPort} required /></label>
 			</div>
 		{/if}
 
-		<p class="pf7">🔒 {i18n.t('tunnel.pf7')}</p>
+		{#if kind === 'remote'}
+			<p class="pf7">{i18n.t('tunnel.remoteHint')}</p>
+			<label class="check">
+				<input type="checkbox" bind:checked={expose} />
+				{i18n.t('tunnel.expose')}
+			</label>
+			{#if expose}<p class="warn">{i18n.t('tunnel.exposeWarn')}</p>{/if}
+		{:else}
+			<p class="pf7">🔒 {i18n.t('tunnel.pf7')}</p>
+		{/if}
 
 		{#if errorMsg}<p class="error">{errorMsg}</p>{/if}
 
@@ -131,6 +148,19 @@
 		margin: 0;
 		font-size: 12px;
 		color: #9fe0b8;
+	}
+	.check {
+		flex-direction: row;
+		align-items: center;
+		gap: 8px;
+	}
+	.check input {
+		width: auto;
+	}
+	.warn {
+		margin: 0;
+		font-size: 12px;
+		color: #e8c97a;
 	}
 	.actions {
 		display: flex;

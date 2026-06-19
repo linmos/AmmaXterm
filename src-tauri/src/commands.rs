@@ -115,9 +115,11 @@ pub async fn site_connect(
     // Auto-establish the site's saved tunnels (PF-4). A tunnel that fails to
     // bind (e.g. port in use) is skipped rather than failing the connection.
     if !site_tunnels.is_empty() {
-        if let Ok(handle) = manager.handle(&id) {
+        if let (Ok(handle), Ok(rf)) = (manager.handle(&id), manager.remote_forwards(&id)) {
             for spec in site_tunnels {
-                let _ = tunnels.open(id.clone(), spec, handle.clone()).await;
+                let _ = tunnels
+                    .open(id.clone(), spec, handle.clone(), rf.clone())
+                    .await;
             }
         }
     }
@@ -354,7 +356,10 @@ pub async fn tunnel_open(
     tunnels: State<'_, TunnelManager>,
 ) -> AppResult<String> {
     let handle = manager.handle(&session_id)?;
-    tunnels.open(session_id, spec, handle).await
+    let remote_forwards = manager.remote_forwards(&session_id)?;
+    tunnels
+        .open(session_id, spec, handle, remote_forwards)
+        .await
 }
 
 /// Close a single tunnel.

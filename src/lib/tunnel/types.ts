@@ -5,6 +5,8 @@ export interface TunnelSpec {
 	listenPort: number;
 	destHost: string;
 	destPort: number;
+	/** Remote (-R) only: bind the server listener to 0.0.0.0 (LAN-exposed). */
+	expose?: boolean;
 }
 
 /** A live tunnel snapshot (mirrors the Rust `TunnelInfo`). */

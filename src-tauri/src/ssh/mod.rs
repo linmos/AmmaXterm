@@ -24,6 +24,12 @@ use crate::error::{AppError, AppResult};
 /// Shared SSH connection handle; used to open the shell and SFTP channels.
 pub(crate) type SshHandle = Handle<ClientHandler>;
 
+/// Per-connection registry of active remote forwards (-R, PF-3): maps the
+/// server-side bind port to the client-side target `(host, port)`. Populated by
+/// the tunnel manager; read by the handler when the server opens a forwarded
+/// channel back to us.
+pub(crate) type RemoteForwards = Arc<Mutex<HashMap<u16, (String, u16)>>>;
+
 /// Quick-connect options coming straight from the frontend (password auth).
 #[derive(Debug, Clone, serde::Deserialize)]
 pub(crate) struct ConnectOptions {
@@ -159,6 +165,7 @@ pub(crate) struct ClientHandler {
     known_hosts: PathBuf,
     prompter: Option<HostKeyPrompter>,
     report: HostKeyReport,
+    remote_forwards: RemoteForwards,
 }
 
 impl client::Handler for ClientHandler {
@@ -235,6 +242,34 @@ impl client::Handler for ClientHandler {
             }
         }
     }
+
+    /// Server opened a remote-forward channel (-R, PF-3): splice it to a fresh
+    /// TCP connection to the client-side target registered for this bind port.
+    async fn server_channel_open_forwarded_tcpip(
+        &mut self,
+        channel: russh::Channel<Msg>,
+        _connected_address: &str,
+        connected_port: u32,
+        _originator_address: &str,
+        _originator_port: u32,
+        _session: &mut client::Session,
+    ) -> Result<(), Self::Error> {
+        let target = self
+            .remote_forwards
+            .lock()
+            .unwrap()
+            .get(&(connected_port as u16))
+            .cloned();
+        if let Some((host, port)) = target {
+            tokio::spawn(async move {
+                if let Ok(mut tcp) = tokio::net::TcpStream::connect((host.as_str(), port)).await {
+                    let mut stream = channel.into_stream();
+                    let _ = tokio::io::copy_bidirectional(&mut tcp, &mut stream).await;
+                }
+            });
+        }
+        Ok(())
+    }
 }
 
 /// Rewrite `known_hosts`, dropping entries for `host[:port]`. Entries written by
@@ -271,19 +306,21 @@ pub(crate) async fn open_shell(
     known_hosts: PathBuf,
     prompter: Option<HostKeyPrompter>,
     keepalive_secs: u32,
-) -> AppResult<(SshHandle, russh::Channel<Msg>)> {
+) -> AppResult<(SshHandle, russh::Channel<Msg>, RemoteForwards)> {
     let mut cfg = client::Config::default();
     if keepalive_secs > 0 {
         cfg.keepalive_interval = Some(Duration::from_secs(keepalive_secs as u64));
     }
     let config = Arc::new(cfg);
     let report = HostKeyReport::default();
+    let remote_forwards: RemoteForwards = Arc::new(Mutex::new(HashMap::new()));
     let handler = ClientHandler {
         host: req.host.clone(),
         port: req.port,
         known_hosts,
         prompter,
         report: report.clone(),
+        remote_forwards: remote_forwards.clone(),
     };
 
     let mut handle = match client::connect(config, (req.host.as_str(), req.port), handler).await {
@@ -304,7 +341,7 @@ pub(crate) async fn open_shell(
         .await?;
     channel.request_shell(true).await?;
 
-    Ok((handle, channel))
+    Ok((handle, channel, remote_forwards))
 }
 
 /// Authenticate using the requested method (TM-2).
@@ -465,7 +502,7 @@ mod tests {
         let _ = std::fs::remove_file(&known_hosts);
 
         // 1) Connect (TOFU learns the key — no prompter in tests) + open a shell.
-        let (handle, mut channel) = open_shell(&test_request(), known_hosts.clone(), None, 0)
+        let (handle, mut channel, _fwd) = open_shell(&test_request(), known_hosts.clone(), None, 0)
             .await
             .expect("open_shell should succeed against the Docker SSH server");
 
@@ -519,7 +556,7 @@ mod tests {
         );
 
         // 4) Reconnect: the learned key must verify (match path, no re-learn).
-        let (handle2, _ch2) = open_shell(&test_request(), known_hosts.clone(), None, 0)
+        let (handle2, _ch2, _fwd2) = open_shell(&test_request(), known_hosts.clone(), None, 0)
             .await
             .expect("reconnect should pass host-key verification");
         let kh = std::fs::read_to_string(&known_hosts).unwrap();

@@ -7,7 +7,7 @@
 //! blocks the listener.
 
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use serde::{Deserialize, Serialize};
@@ -15,7 +15,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 
 use crate::error::{AppError, AppResult};
-use crate::ssh::SshHandle;
+use crate::ssh::{RemoteForwards, SshHandle};
 
 /// Loopback bind address enforced for local listeners (PF-7).
 const LOOPBACK: &str = "127.0.0.1";
@@ -29,12 +29,16 @@ pub struct TunnelSpec {
     /// Local listen port (for local/dynamic).
     #[serde(default)]
     pub listen_port: u16,
-    /// Forward destination host (local only).
+    /// Forward destination host (local/remote target).
     #[serde(default)]
     pub dest_host: String,
-    /// Forward destination port (local only).
+    /// Forward destination port (local/remote target).
     #[serde(default)]
     pub dest_port: u16,
+    /// Remote (-R) only: bind the server listener to 0.0.0.0 (LAN-exposed)
+    /// instead of 127.0.0.1. Off by default (PF-3 safe default).
+    #[serde(default)]
+    pub expose: bool,
 }
 
 #[derive(Default)]
@@ -49,6 +53,7 @@ struct Tunnel {
     session_id: String,
     task: tokio::task::JoinHandle<()>,
     metrics: Arc<Metrics>,
+    cancel: Arc<AtomicBool>,
 }
 
 /// Snapshot of a tunnel for the management panel (PF-5).
@@ -87,8 +92,10 @@ impl TunnelManager {
         session_id: String,
         spec: TunnelSpec,
         handle: Arc<SshHandle>,
+        remote_forwards: RemoteForwards,
     ) -> AppResult<String> {
         let metrics = Arc::new(Metrics::default());
+        let cancel = Arc::new(AtomicBool::new(false));
         let task = match spec.kind.as_str() {
             "local" => {
                 if spec.dest_host.is_empty() || spec.dest_port == 0 {
@@ -103,10 +110,37 @@ impl TunnelManager {
                 let listener = bind(spec.listen_port).await?;
                 spawn_dynamic(listener, handle, metrics.clone())
             }
+            "remote" => {
+                if spec.dest_host.is_empty() || spec.dest_port == 0 {
+                    return Err(AppError::Other(
+                        "remote forward needs a destination host and port".into(),
+                    ));
+                }
+                let bind_addr = if spec.expose { "0.0.0.0" } else { "127.0.0.1" };
+                // Register the client-side target before asking the server to listen.
+                remote_forwards
+                    .lock()
+                    .unwrap()
+                    .insert(spec.listen_port, (spec.dest_host.clone(), spec.dest_port));
+                if let Err(e) = handle
+                    .tcpip_forward(bind_addr, spec.listen_port as u32)
+                    .await
+                {
+                    remote_forwards.lock().unwrap().remove(&spec.listen_port);
+                    return Err(AppError::Other(format!(
+                        "remote forward request was denied by the server: {e}"
+                    )));
+                }
+                spawn_remote_cleanup(
+                    handle,
+                    remote_forwards,
+                    bind_addr.to_string(),
+                    spec.listen_port,
+                    cancel.clone(),
+                )
+            }
             other => {
-                return Err(AppError::Other(format!(
-                    "tunnel type '{other}' is not supported yet"
-                )));
+                return Err(AppError::Other(format!("unknown tunnel type '{other}'")));
             }
         };
 
@@ -118,6 +152,7 @@ impl TunnelManager {
                 session_id,
                 task,
                 metrics,
+                cancel,
             },
         );
         Ok(id)
@@ -125,7 +160,7 @@ impl TunnelManager {
 
     pub fn close(&self, id: &str) {
         if let Some(t) = self.tunnels.lock().unwrap().remove(id) {
-            t.task.abort();
+            stop(&t);
         }
     }
 
@@ -139,7 +174,7 @@ impl TunnelManager {
             .collect();
         for id in ids {
             if let Some(t) = guard.remove(&id) {
-                t.task.abort();
+                stop(&t);
             }
         }
     }
@@ -153,7 +188,11 @@ impl TunnelManager {
                 id: id.clone(),
                 session_id: t.session_id.clone(),
                 kind: t.spec.kind.clone(),
-                listen_host: LOOPBACK.to_string(),
+                listen_host: if t.spec.kind == "remote" && t.spec.expose {
+                    "0.0.0.0".to_string()
+                } else {
+                    LOOPBACK.to_string()
+                },
                 listen_port: t.spec.listen_port,
                 dest_host: t.spec.dest_host.clone(),
                 dest_port: t.spec.dest_port,
@@ -163,6 +202,36 @@ impl TunnelManager {
             })
             .collect()
     }
+}
+
+/// Stop a tunnel: signal cancel. Remote (-R) tunnels self-clean on the flag
+/// (cancelling the server-side forward); local/dynamic just have their listener
+/// task aborted.
+fn stop(t: &Tunnel) {
+    t.cancel.store(true, Ordering::Relaxed);
+    if t.spec.kind != "remote" {
+        t.task.abort();
+    }
+}
+
+/// Remote forward (-R): the server does the listening, so this task only waits
+/// for cancel, then asks the server to stop and drops the registry entry.
+fn spawn_remote_cleanup(
+    handle: Arc<SshHandle>,
+    remote_forwards: RemoteForwards,
+    bind_addr: String,
+    bind_port: u16,
+    cancel: Arc<AtomicBool>,
+) -> tokio::task::JoinHandle<()> {
+    tokio::spawn(async move {
+        while !cancel.load(Ordering::Relaxed) {
+            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+        }
+        let _ = handle
+            .cancel_tcpip_forward(bind_addr, bind_port as u32)
+            .await;
+        remote_forwards.lock().unwrap().remove(&bind_port);
+    })
 }
 
 /// Bind a loopback TCP listener, mapping common failures to clear errors (PF-6/7).

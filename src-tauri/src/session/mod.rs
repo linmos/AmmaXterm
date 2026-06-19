@@ -12,14 +12,17 @@ use tokio::sync::mpsc;
 
 use crate::error::{AppError, AppResult};
 use crate::ssh::{
-    self, ConnectRequest, HostKeyPrompter, HostKeyPrompts, SessionCommand, SshHandle,
+    self, ConnectRequest, HostKeyPrompter, HostKeyPrompts, RemoteForwards, SessionCommand,
+    SshHandle,
 };
 
 /// One active session: the shell command channel plus the shared SSH handle
-/// (used to open SFTP channels on the same connection).
+/// (used to open SFTP channels on the same connection) and the remote-forward
+/// registry (-R targets, PF-3).
 struct Session {
     commands: mpsc::Sender<SessionCommand>,
     handle: Arc<SshHandle>,
+    remote_forwards: RemoteForwards,
 }
 
 /// Tracks all active sessions by id.
@@ -50,7 +53,7 @@ impl SessionManager {
             app: app.clone(),
             prompts,
         };
-        let (handle, channel) =
+        let (handle, channel, remote_forwards) =
             ssh::open_shell(&req, known_hosts, Some(prompter), keepalive_secs).await?;
         let id = format!("session-{}", self.counter.fetch_add(1, Ordering::Relaxed));
         let (tx, rx) = mpsc::channel(64);
@@ -60,9 +63,20 @@ impl SessionManager {
             Session {
                 commands: tx,
                 handle: Arc::new(handle),
+                remote_forwards,
             },
         );
         Ok(id)
+    }
+
+    /// Clone the remote-forward registry for a session (-R, PF-3).
+    pub fn remote_forwards(&self, id: &str) -> AppResult<RemoteForwards> {
+        self.sessions
+            .lock()
+            .unwrap()
+            .get(id)
+            .map(|s| s.remote_forwards.clone())
+            .ok_or_else(|| AppError::SessionNotFound(id.to_string()))
     }
 
     /// Clone the command sender for a session (lock is never held across await).
