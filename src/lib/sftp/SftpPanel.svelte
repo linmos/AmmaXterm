@@ -54,6 +54,18 @@
 		return localPath.replace(/[\\/]+$/, '') + sep + name;
 	}
 
+	// Most shells don't emit OSC 7 over plain SSH (the cwd report follow-cd needs).
+	// When enabling follow-cd, install a prompt hook so the shell reports its cwd:
+	// bash via PROMPT_COMMAND, zsh via precmd.
+	function toggleFollowCd() {
+		followCd = !followCd;
+		if (!followCd) return;
+		const setup =
+			'if [ -n "$ZSH_VERSION" ]; then precmd(){ printf \'\\033]7;file://%s%s\\033\\\\\' "$HOST" "$PWD"; }; ' +
+			'else PROMPT_COMMAND=\'printf "\\033]7;file://%s%s\\033\\\\" "$HOSTNAME" "$PWD"\'; fi\n';
+		invoke('ssh_send_input', { id: sessionId, data: setup }).catch(() => {});
+	}
+
 	const shown = $derived.by(() => {
 		const q = filter.trim().toLowerCase();
 		const out = entries.filter((e) => !q || e.name.toLowerCase().includes(q));
@@ -301,7 +313,7 @@
 		<button onclick={() => (newFolder = '')} title={i18n.t('sftp.newFolder')} disabled={busy}>＋</button>
 		<button onclick={upload} title={i18n.t('sftp.upload')} disabled={busy}>⬆</button>
 		<button class:on={dual} onclick={() => (dual = !dual)} title={i18n.t('sftp.dual')}>⇆</button>
-		<button class:on={followCd} onclick={() => (followCd = !followCd)} title={i18n.t('sftp.followCd')}>📍</button>
+		<button class:on={followCd} onclick={toggleFollowCd} title={i18n.t('sftp.followCd')}>📍</button>
 		<button onclick={list} title={i18n.t('sftp.refresh')} disabled={loading || busy}>⟳</button>
 	</div>
 
