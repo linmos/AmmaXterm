@@ -79,12 +79,23 @@
 		chmodTarget = entry.name;
 		chmodValue = ((entry.permissions ?? 0) & 0o777).toString(8).padStart(3, '0');
 	}
-	async function applyChmod(entry: FileEntry) {
+	async function applyChmod() {
+		const name = chmodTarget;
 		const mode = parseInt(chmodValue, 8);
 		chmodTarget = null;
-		if (Number.isNaN(mode)) return;
-		await run(() => invoke('sftp_chmod', { id: sessionId, path: join(path, entry.name), mode }));
+		if (!name || Number.isNaN(mode)) return;
+		await run(() => invoke('sftp_chmod', { id: sessionId, path: join(path, name), mode }));
 	}
+
+	// Virtual scrolling for large directories (FT-9): render only visible rows.
+	const ROW_H = 40;
+	const OVERSCAN = 8;
+	let scroller = $state<HTMLDivElement | undefined>();
+	let scrollTop = $state(0);
+	let viewH = $state(0);
+	const vStart = $derived(Math.max(0, Math.floor(scrollTop / ROW_H) - OVERSCAN));
+	const vEnd = $derived(Math.min(shown.length, Math.ceil((scrollTop + viewH) / ROW_H) + OVERSCAN));
+	const visible = $derived(shown.slice(vStart, vEnd));
 
 	function join(dir: string, name: string): string {
 		if (dir === '.' || dir === '') return name;
@@ -244,79 +255,87 @@
 		<p class="err">{errorMsg}</p>
 	{/if}
 
-	<ul class="list">
-		{#each shown as entry (entry.name)}
-			<li>
-				{#if renaming === entry.name}
-					<input
-						class="rename"
-						bind:value={renameValue}
-						onkeydown={(e) => {
-							if (e.key === 'Enter') commitRename(entry);
-							else if (e.key === 'Escape') renaming = null;
-						}}
-					/>
-				{:else}
-					<button class="row" class:dir={entry.is_dir} onclick={() => openEntry(entry)}>
-						<span class="top">
-							<span class="name">{entry.is_dir ? '📁' : '📄'} {entry.name}</span>
-							{#if !entry.is_dir}<span class="size">{fmtSize(entry.size)}</span>{/if}
-						</span>
-						{#if entry.permissions != null || entry.modified}
-							<span class="meta">
-								{#if entry.permissions != null}<span class="perm">{permString(entry.permissions)}</span>{/if}
-								{#if entry.uid != null}<span>{entry.uid}:{entry.gid ?? 0}</span>{/if}
-								{#if entry.modified}<span>{fmtDate(entry.modified)}</span>{/if}
-							</span>
-						{/if}
-					</button>
-					<div class="ops">
-						{#if !entry.is_dir}
-							<button class="sm" title={i18n.t('sftp.download')} onclick={() => download(entry)} disabled={busy}
-								>⬇</button
-							>
-						{/if}
-						<button class="sm" title={i18n.t('sftp.chmod')} onclick={() => openChmod(entry)} disabled={busy}>⚙</button>
-						<button
-							class="sm"
-							title={i18n.t('sftp.rename')}
-							onclick={() => {
-								renaming = entry.name;
-								renameValue = entry.name;
-							}}
-							disabled={busy}>✎</button
-						>
-						<button
-							class="sm"
-							class:danger={confirmingDelete === entry.name}
-							title={i18n.t('common.delete')}
-							onclick={() => del(entry)}
-							disabled={busy}
-						>
-							{confirmingDelete === entry.name ? i18n.t('common.sure') : '🗑'}
-						</button>
-					</div>
-				{/if}
-				{#if chmodTarget === entry.name}
-					<div class="chmod">
-						<span class="lbl">{i18n.t('sftp.chmod')}</span>
-						<input
-							class="octal"
-							bind:value={chmodValue}
-							onkeydown={(e) => {
-								if (e.key === 'Enter') applyChmod(entry);
-								else if (e.key === 'Escape') chmodTarget = null;
-							}}
-						/>
-						<button onclick={() => applyChmod(entry)} disabled={busy}>{i18n.t('sftp.apply')}</button>
-					</div>
-				{/if}
-			</li>
-		{/each}
+	<div
+		class="listwrap"
+		bind:this={scroller}
+		bind:clientHeight={viewH}
+		onscroll={() => (scrollTop = scroller?.scrollTop ?? 0)}
+	>
 		{#if !shown.length && !loading && !errorMsg}
-			<li class="empty">{i18n.t('sftp.empty')}</li>
+			<div class="empty">{i18n.t('sftp.empty')}</div>
+		{:else}
+			<!-- Spacer sized to the full list; only the visible window is rendered. -->
+			<div class="spacer" style="height:{shown.length * ROW_H}px">
+				{#each visible as entry, vi (entry.name)}
+					<div class="vrow" style="top:{(vStart + vi) * ROW_H}px; height:{ROW_H}px">
+						{#if renaming === entry.name}
+							<input
+								class="rename"
+								bind:value={renameValue}
+								onkeydown={(e) => {
+									if (e.key === 'Enter') commitRename(entry);
+									else if (e.key === 'Escape') renaming = null;
+								}}
+							/>
+						{:else}
+							<button class="row" class:dir={entry.is_dir} onclick={() => openEntry(entry)}>
+								<span class="top">
+									<span class="name">{entry.is_dir ? '📁' : '📄'} {entry.name}</span>
+									{#if !entry.is_dir}<span class="size">{fmtSize(entry.size)}</span>{/if}
+								</span>
+								{#if entry.permissions != null || entry.modified}
+									<span class="meta">
+										{#if entry.permissions != null}<span class="perm">{permString(entry.permissions)}</span>{/if}
+										{#if entry.uid != null}<span>{entry.uid}:{entry.gid ?? 0}</span>{/if}
+										{#if entry.modified}<span>{fmtDate(entry.modified)}</span>{/if}
+									</span>
+								{/if}
+							</button>
+							<div class="ops">
+								{#if !entry.is_dir}
+									<button class="sm" title={i18n.t('sftp.download')} onclick={() => download(entry)} disabled={busy}>⬇</button>
+								{/if}
+								<button class="sm" title={i18n.t('sftp.chmod')} onclick={() => openChmod(entry)} disabled={busy}>⚙</button>
+								<button
+									class="sm"
+									title={i18n.t('sftp.rename')}
+									onclick={() => {
+										renaming = entry.name;
+										renameValue = entry.name;
+									}}
+									disabled={busy}>✎</button
+								>
+								<button
+									class="sm"
+									class:danger={confirmingDelete === entry.name}
+									title={i18n.t('common.delete')}
+									onclick={() => del(entry)}
+									disabled={busy}
+								>
+									{confirmingDelete === entry.name ? i18n.t('common.sure') : '🗑'}
+								</button>
+							</div>
+						{/if}
+					</div>
+				{/each}
+			</div>
 		{/if}
-	</ul>
+	</div>
+
+	{#if chmodTarget}
+		<div class="chmod">
+			<span class="lbl">{i18n.t('sftp.chmod')}: {chmodTarget}</span>
+			<input
+				class="octal"
+				bind:value={chmodValue}
+				onkeydown={(e) => {
+					if (e.key === 'Enter') applyChmod();
+					else if (e.key === 'Escape') chmodTarget = null;
+				}}
+			/>
+			<button onclick={applyChmod} disabled={busy}>{i18n.t('sftp.apply')}</button>
+		</div>
+	{/if}
 
 	<TransferQueue {sessionId} />
 </div>
@@ -383,13 +402,15 @@
 		flex: 1;
 		min-width: 0;
 	}
-	.list {
+	.listwrap {
 		flex: 1;
 		min-height: 0;
 		overflow: auto;
-		margin: 0;
-		padding: 0;
-		list-style: none;
+		position: relative;
+	}
+	.spacer {
+		position: relative;
+		width: 100%;
 	}
 	.filterbar {
 		display: flex;
@@ -421,12 +442,15 @@
 		border-color: #0e639c;
 		color: #fff;
 	}
-	.list li {
+	.vrow {
+		position: absolute;
+		left: 0;
+		right: 0;
 		display: flex;
 		align-items: center;
-		flex-wrap: wrap;
+		box-sizing: border-box;
 	}
-	.list li:hover {
+	.vrow:hover {
 		background: #2a2a2a;
 	}
 	.row {
@@ -472,11 +496,12 @@
 		font-family: Consolas, monospace;
 	}
 	.chmod {
-		flex-basis: 100%;
 		display: flex;
 		align-items: center;
 		gap: 6px;
-		padding: 4px 8px 6px;
+		padding: 6px 8px;
+		border-top: 1px solid #333;
+		background: #161616;
 	}
 	.chmod .lbl {
 		font-size: 11px;
