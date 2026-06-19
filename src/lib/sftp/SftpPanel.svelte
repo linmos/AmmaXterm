@@ -2,7 +2,9 @@
 	import { onMount } from 'svelte';
 	import { invoke } from '@tauri-apps/api/core';
 	import { open, save } from '@tauri-apps/plugin-dialog';
+	import { app } from '$lib/state.svelte';
 	import { i18n } from '$lib/i18n.svelte';
+	import TransferQueue from './TransferQueue.svelte';
 	import type { FileEntry } from './types';
 
 	interface Props {
@@ -151,27 +153,17 @@
 	}
 
 	async function upload() {
-		const selected = await open({ multiple: false, title: i18n.t('sftp.upload') });
-		if (typeof selected !== 'string') return;
-		await run(() =>
-			invoke('sftp_upload', {
-				id: sessionId,
-				localPath: selected,
-				remotePath: join(path, basename(selected))
-			})
-		);
+		const selected = await open({ multiple: true, title: i18n.t('sftp.upload') });
+		const files = Array.isArray(selected) ? selected : typeof selected === 'string' ? [selected] : [];
+		for (const f of files) {
+			await app.uploadFile(sessionId, f, join(path, basename(f)));
+		}
 	}
 
 	async function download(entry: FileEntry) {
 		const target = await save({ defaultPath: entry.name, title: `${i18n.t('sftp.download')} ${entry.name}` });
 		if (typeof target !== 'string') return;
-		await run(() =>
-			invoke('sftp_download', {
-				id: sessionId,
-				remotePath: join(path, entry.name),
-				localPath: target
-			})
-		);
+		await app.downloadFile(sessionId, join(path, entry.name), target);
 	}
 
 	function fmtSize(n: number): string {
@@ -304,6 +296,8 @@
 			<li class="empty">{i18n.t('sftp.empty')}</li>
 		{/if}
 	</ul>
+
+	<TransferQueue {sessionId} />
 </div>
 
 <style>

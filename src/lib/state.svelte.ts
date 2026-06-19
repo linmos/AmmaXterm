@@ -3,6 +3,7 @@ import { listen } from '@tauri-apps/api/event';
 import { settings } from './settings.svelte';
 import type { ImportedSite, Site, SiteInput } from './sites/types';
 import type { TerminalApi, TerminalSize } from './terminal/types';
+import type { TransferInfo } from './sftp/types';
 import type { TunnelInfo, TunnelSpec } from './tunnel/types';
 
 export type TabStatus = 'connecting' | 'connected' | 'closed' | 'error';
@@ -51,6 +52,7 @@ class AppState {
 	activeKey = $state<string | null>(null);
 	hostKeyPrompt = $state<HostKeyPrompt | null>(null);
 	tunnels = $state<TunnelInfo[]>([]);
+	transfers = $state<TransferInfo[]>([]);
 
 	get activeTab(): Tab | undefined {
 		return this.tabs.find((t) => t.key === this.activeKey);
@@ -122,6 +124,37 @@ class AppState {
 	async closeTunnel(id: string) {
 		await invoke('tunnel_close', { id }).catch(() => {});
 		await this.refreshTunnels();
+	}
+
+	// --- SFTP transfer queue (FT-4) ---
+
+	async refreshTransfers() {
+		this.transfers = await invoke<TransferInfo[]>('transfer_list');
+	}
+
+	async uploadFile(sessionId: string, localPath: string, remotePath: string) {
+		await invoke<string>('transfer_upload', { sessionId, localPath, remotePath });
+		await this.refreshTransfers();
+	}
+
+	async downloadFile(sessionId: string, remotePath: string, localPath: string) {
+		await invoke<string>('transfer_download', { sessionId, remotePath, localPath });
+		await this.refreshTransfers();
+	}
+
+	async cancelTransfer(id: string) {
+		await invoke('transfer_cancel', { id }).catch(() => {});
+		await this.refreshTransfers();
+	}
+
+	async retryTransfer(id: string) {
+		await invoke('transfer_retry', { id }).catch(() => {});
+		await this.refreshTransfers();
+	}
+
+	async clearTransfer(id: string) {
+		await invoke('transfer_clear', { id }).catch(() => {});
+		await this.refreshTransfers();
 	}
 
 	// --- import / export (SM-7, SM-8) ---

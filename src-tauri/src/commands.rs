@@ -13,6 +13,7 @@ use crate::settings::{Settings, SettingsStore};
 use crate::sftp::FileEntry;
 use crate::ssh::{AuthCredential, ConnectOptions, ConnectRequest, HostKeyPrompts};
 use crate::store::{AuthMethod, Site, SiteInput, SiteStore};
+use crate::transfer::{TransferInfo, TransferManager};
 use crate::tunnel::{TunnelInfo, TunnelManager, TunnelSpec};
 
 /// Resolve (and ensure) the app config directory.
@@ -366,6 +367,66 @@ pub fn tunnel_close(id: String, tunnels: State<'_, TunnelManager>) {
 #[tauri::command]
 pub fn tunnel_list(tunnels: State<'_, TunnelManager>) -> Vec<TunnelInfo> {
     tunnels.list()
+}
+
+// --- SFTP transfer queue (FT-4) ---
+
+/// Queue an upload; returns the transfer id (progress via `transfer_list`).
+#[tauri::command]
+pub async fn transfer_upload(
+    session_id: String,
+    local_path: String,
+    remote_path: String,
+    manager: State<'_, SessionManager>,
+    transfers: State<'_, TransferManager>,
+) -> AppResult<String> {
+    let handle = manager.handle(&session_id)?;
+    transfers
+        .enqueue_upload(handle, session_id, local_path, remote_path)
+        .await
+}
+
+/// Queue a download; returns the transfer id.
+#[tauri::command]
+pub async fn transfer_download(
+    session_id: String,
+    remote_path: String,
+    local_path: String,
+    manager: State<'_, SessionManager>,
+    transfers: State<'_, TransferManager>,
+) -> AppResult<String> {
+    let handle = manager.handle(&session_id)?;
+    transfers
+        .enqueue_download(handle, session_id, remote_path, local_path)
+        .await
+}
+
+/// List all transfers (queue panel).
+#[tauri::command]
+pub fn transfer_list(transfers: State<'_, TransferManager>) -> Vec<TransferInfo> {
+    transfers.list()
+}
+
+/// Cancel an active transfer.
+#[tauri::command]
+pub fn transfer_cancel(id: String, transfers: State<'_, TransferManager>) {
+    transfers.cancel(&id);
+}
+
+/// Retry a finished/canceled/errored transfer from the start.
+#[tauri::command]
+pub async fn transfer_retry(
+    id: String,
+    manager: State<'_, SessionManager>,
+    transfers: State<'_, TransferManager>,
+) -> AppResult<()> {
+    transfers.retry(&id, &manager).await
+}
+
+/// Remove a finished transfer from the list.
+#[tauri::command]
+pub fn transfer_clear(id: String, transfers: State<'_, TransferManager>) {
+    transfers.clear(&id);
 }
 
 // --- Settings (TM-11, ST-1, ST-2) ---

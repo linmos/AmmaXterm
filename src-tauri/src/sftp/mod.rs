@@ -4,6 +4,8 @@
 //! persist one `SftpSession` per connection and add a transfer queue, resume,
 //! and progress reporting (FT-4, FT-7, FT-9).
 
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+
 use russh_sftp::client::SftpSession;
 use russh_sftp::protocol::OpenFlags;
 use serde::Serialize;
@@ -11,6 +13,9 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 use crate::error::{AppError, AppResult};
 use crate::ssh::SshHandle;
+
+/// Chunk size for streaming transfers (FT-4).
+const CHUNK: usize = 32 * 1024;
 
 /// One remote directory entry (FT-1, FT-8).
 #[derive(Serialize)]
@@ -64,6 +69,77 @@ pub async fn list_dir(handle: &SshHandle, path: &str) -> AppResult<Vec<FileEntry
             .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
     });
     Ok(entries)
+}
+
+/// Size of a remote file in bytes (for transfer totals, FT-4).
+pub async fn remote_size(handle: &SshHandle, path: &str) -> AppResult<u64> {
+    let sftp = open(handle).await?;
+    let md = sftp.metadata(path).await.map_err(sftp_err)?;
+    Ok(md.size.unwrap_or(0))
+}
+
+/// Stream a local file to the remote in chunks, updating `done` and stopping
+/// promptly if `cancel` is set (FT-4 progress + cancel).
+pub async fn upload_streaming(
+    handle: &SshHandle,
+    local_path: &str,
+    remote_path: &str,
+    done: &AtomicU64,
+    cancel: &AtomicBool,
+) -> AppResult<()> {
+    let mut local = tokio::fs::File::open(local_path).await?;
+    let sftp = open(handle).await?;
+    let mut remote = sftp
+        .open_with_flags(
+            remote_path,
+            OpenFlags::CREATE | OpenFlags::TRUNCATE | OpenFlags::WRITE,
+        )
+        .await
+        .map_err(sftp_err)?;
+    let mut buf = vec![0u8; CHUNK];
+    loop {
+        if cancel.load(Ordering::Relaxed) {
+            break;
+        }
+        let n = local.read(&mut buf).await?;
+        if n == 0 {
+            break;
+        }
+        remote.write_all(&buf[..n]).await?;
+        done.fetch_add(n as u64, Ordering::Relaxed);
+    }
+    remote.shutdown().await?;
+    Ok(())
+}
+
+/// Stream a remote file to a local path in chunks (FT-4 progress + cancel).
+pub async fn download_streaming(
+    handle: &SshHandle,
+    remote_path: &str,
+    local_path: &str,
+    done: &AtomicU64,
+    cancel: &AtomicBool,
+) -> AppResult<()> {
+    let sftp = open(handle).await?;
+    let mut remote = sftp
+        .open_with_flags(remote_path, OpenFlags::READ)
+        .await
+        .map_err(sftp_err)?;
+    let mut local = tokio::fs::File::create(local_path).await?;
+    let mut buf = vec![0u8; CHUNK];
+    loop {
+        if cancel.load(Ordering::Relaxed) {
+            break;
+        }
+        let n = remote.read(&mut buf).await?;
+        if n == 0 {
+            break;
+        }
+        local.write_all(&buf[..n]).await?;
+        done.fetch_add(n as u64, Ordering::Relaxed);
+    }
+    local.shutdown().await?;
+    Ok(())
 }
 
 /// Upload a local file to a remote path (FT-2).

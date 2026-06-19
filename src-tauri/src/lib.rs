@@ -7,12 +7,14 @@ mod settings;
 mod sftp;
 mod ssh;
 mod store;
+mod transfer;
 mod tunnel;
 
 use session::SessionManager;
 use settings::SettingsStore;
 use store::SiteStore;
 use tauri::Manager;
+use transfer::TransferManager;
 use tunnel::TunnelManager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -22,6 +24,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .manage(SessionManager::new())
         .manage(TunnelManager::new())
+        .manage(TransferManager::new())
         .manage(ssh::HostKeyPrompts::default())
         .setup(|app| {
             // Sites + settings live under the app config dir.
@@ -60,6 +63,12 @@ pub fn run() {
             commands::tunnel_open,
             commands::tunnel_close,
             commands::tunnel_list,
+            commands::transfer_upload,
+            commands::transfer_download,
+            commands::transfer_list,
+            commands::transfer_cancel,
+            commands::transfer_retry,
+            commands::transfer_clear,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
