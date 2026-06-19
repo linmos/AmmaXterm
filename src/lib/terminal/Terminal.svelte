@@ -82,6 +82,31 @@
 		term.onData((data) => onData?.(data));
 		term.onResize((size) => onResize?.(size));
 
+		// Copy / paste (TM-4): Ctrl+Shift+C / Ctrl+Shift+V, plus right-click.
+		term.attachCustomKeyEventHandler((e) => {
+			if (e.type === 'keydown' && e.ctrlKey && e.shiftKey && term) {
+				const k = e.key.toLowerCase();
+				if (k === 'c' && term.hasSelection()) {
+					void navigator.clipboard.writeText(term.getSelection());
+					return false;
+				}
+				if (k === 'v') {
+					void navigator.clipboard.readText().then((t) => t && term?.paste(t));
+					return false;
+				}
+			}
+			return true;
+		});
+		container.addEventListener('contextmenu', (e) => {
+			e.preventDefault();
+			if (term?.hasSelection()) {
+				void navigator.clipboard.writeText(term.getSelection());
+				term.clearSelection();
+			} else {
+				void navigator.clipboard.readText().then((t) => t && term?.paste(t));
+			}
+		});
+
 		resizeObserver = new ResizeObserver(() => fit());
 		resizeObserver.observe(container);
 

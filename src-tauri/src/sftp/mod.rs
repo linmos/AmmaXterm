@@ -90,3 +90,38 @@ pub async fn download(handle: &SshHandle, remote_path: &str, local_path: &str) -
     tokio::fs::write(local_path, &buf).await?;
     Ok(())
 }
+
+/// Create a remote directory (FT-3).
+pub async fn make_dir(handle: &SshHandle, path: &str) -> AppResult<()> {
+    let sftp = open(handle).await?;
+    sftp.create_dir(path).await.map_err(sftp_err)
+}
+
+/// Rename or move a remote file/directory (FT-3).
+pub async fn rename(handle: &SshHandle, from: &str, to: &str) -> AppResult<()> {
+    let sftp = open(handle).await?;
+    sftp.rename(from, to).await.map_err(sftp_err)
+}
+
+/// Delete a remote file, or a directory and its contents recursively (FT-3).
+pub async fn remove(handle: &SshHandle, path: &str, is_dir: bool) -> AppResult<()> {
+    let sftp = open(handle).await?;
+    if is_dir {
+        remove_dir_recursive(&sftp, path).await
+    } else {
+        sftp.remove_file(path).await.map_err(sftp_err)
+    }
+}
+
+async fn remove_dir_recursive(sftp: &SftpSession, path: &str) -> AppResult<()> {
+    let base = path.trim_end_matches('/');
+    for entry in sftp.read_dir(path).await.map_err(sftp_err)? {
+        let child = format!("{}/{}", base, entry.file_name());
+        if entry.file_type().is_dir() {
+            Box::pin(remove_dir_recursive(sftp, &child)).await?;
+        } else {
+            sftp.remove_file(&child).await.map_err(sftp_err)?;
+        }
+    }
+    sftp.remove_dir(path).await.map_err(sftp_err)
+}

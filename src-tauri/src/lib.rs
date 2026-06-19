@@ -14,6 +14,7 @@ use tauri::Manager;
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
         .manage(SessionManager::new())
         .setup(|app| {
             // Sites live in sites.json under the app config dir.
@@ -30,6 +31,9 @@ pub fn run() {
             commands::sftp_list,
             commands::sftp_upload,
             commands::sftp_download,
+            commands::sftp_mkdir,
+            commands::sftp_rename,
+            commands::sftp_delete,
             commands::site_list,
             commands::site_add,
             commands::site_update,

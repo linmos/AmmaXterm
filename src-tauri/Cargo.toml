@@ -28,6 +28,7 @@ russh-sftp = "2.3.0"
 thiserror = "2.0.18"
 base64 = "0.22"
 uuid = { version = "1.23.3", features = ["v4"] }
+tauri-plugin-dialog = "2.7.1"
 
 # OS keychain — per-platform native backends (AK-1).
 [target.'cfg(windows)'.dependencies]

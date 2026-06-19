@@ -145,6 +145,41 @@ pub async fn sftp_download(
     crate::sftp::download(&handle, &remote_path, &local_path).await
 }
 
+/// Create a remote directory (FT-3).
+#[tauri::command]
+pub async fn sftp_mkdir(
+    id: String,
+    path: String,
+    manager: State<'_, SessionManager>,
+) -> AppResult<()> {
+    let handle = manager.handle(&id)?;
+    crate::sftp::make_dir(&handle, &path).await
+}
+
+/// Rename or move a remote file/directory (FT-3).
+#[tauri::command]
+pub async fn sftp_rename(
+    id: String,
+    from: String,
+    to: String,
+    manager: State<'_, SessionManager>,
+) -> AppResult<()> {
+    let handle = manager.handle(&id)?;
+    crate::sftp::rename(&handle, &from, &to).await
+}
+
+/// Delete a remote file or directory (recursive for dirs) (FT-3).
+#[tauri::command]
+pub async fn sftp_delete(
+    id: String,
+    path: String,
+    is_dir: bool,
+    manager: State<'_, SessionManager>,
+) -> AppResult<()> {
+    let handle = manager.handle(&id)?;
+    crate::sftp::remove(&handle, &path, is_dir).await
+}
+
 // --- Saved sites (SM-1) ---
 
 /// List all saved sites.
