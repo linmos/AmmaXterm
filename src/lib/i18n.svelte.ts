@@ -9,6 +9,7 @@
 type Messages = Record<string, string>;
 
 const en: Messages = {
+	'sidebar.title': 'All sessions',
 	'sidebar.quickConnect': 'Quick connect',
 	'sidebar.newSite': 'New session',
 	'sidebar.search': 'Search sessions…',
@@ -197,6 +198,7 @@ const en: Messages = {
 };
 
 const zhTW: Messages = {
+	'sidebar.title': '所有工作階段',
 	'sidebar.quickConnect': '快速連線',
 	'sidebar.newSite': '新增工作階段',
 	'sidebar.search': '搜尋工作階段…',
