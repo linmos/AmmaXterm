@@ -11,7 +11,9 @@ use tauri::AppHandle;
 use tokio::sync::mpsc;
 
 use crate::error::{AppError, AppResult};
-use crate::ssh::{self, ConnectRequest, HostKeyPrompter, HostKeyPrompts, SessionCommand, SshHandle};
+use crate::ssh::{
+    self, ConnectRequest, HostKeyPrompter, HostKeyPrompts, SessionCommand, SshHandle,
+};
 
 /// One active session: the shell command channel plus the shared SSH handle
 /// (used to open SFTP channels on the same connection).

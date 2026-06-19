@@ -18,3 +18,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   host-key verification (`known_hosts`, trust-on-first-use + change rejection),
   and basic SFTP (list/upload/download) with a minimal file panel. See
   `docs/M0-技術驗證結論.md`.
+- M1 (MVP): saved-site management (CRUD + local `sites.json`), OS-keychain
+  credential storage and full auth (password / public-key + passphrase /
+  keyboard-interactive), three-pane UI (site sidebar, multi-tab terminals,
+  SFTP panel), connection lifecycle events, full SFTP file operations
+  (mkdir / rename / delete / upload / download), terminal copy-paste,
+  interactive host-key prompt, two-step destructive confirmations,
+  i18n (繁體中文 / English), and CI + release (tauri-action) workflows.

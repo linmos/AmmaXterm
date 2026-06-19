@@ -41,6 +41,7 @@ pub async fn ssh_connect(
 }
 
 /// Open an SSH session from a saved site, resolving its secret from the keychain.
+#[allow(clippy::too_many_arguments)]
 #[tauri::command]
 pub async fn site_connect(
     app: AppHandle,
@@ -69,7 +70,9 @@ pub async fn site_connect(
                 .ok_or_else(|| AppError::Auth("no saved secret for this site".into()))?,
         ),
         AuthMethod::Agent => {
-            return Err(AppError::Other("SSH agent auth is not supported yet".into()))
+            return Err(AppError::Other(
+                "SSH agent auth is not supported yet".into(),
+            ))
         }
     };
 

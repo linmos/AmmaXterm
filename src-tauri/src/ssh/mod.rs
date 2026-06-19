@@ -452,7 +452,10 @@ mod tests {
         })
         .await
         .unwrap_or(false);
-        assert!(saw_marker, "shell did not echo the marker; output so far:\n{out}");
+        assert!(
+            saw_marker,
+            "shell did not echo the marker; output so far:\n{out}"
+        );
 
         // 3) SFTP on the SAME connection: list + upload/download round-trip.
         let entries = crate::sftp::list_dir(&handle, ".")

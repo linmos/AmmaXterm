@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { app } from '$lib/state.svelte';
+	import { i18n } from '$lib/i18n.svelte';
 	import SiteDialog from './SiteDialog.svelte';
 	import type { Site } from './types';
 
@@ -55,47 +56,50 @@
 	<div class="head">
 		<strong>AmmaXterm</strong>
 		<div class="head-actions">
-			<button class="ghost" title="Quick connect" onclick={() => (showQuick = !showQuick)}>⚡</button>
-			<button class="ghost" title="New site" onclick={newSite}>＋</button>
+			<button class="ghost lang" title="Language" onclick={() => i18n.toggle()}>
+				{i18n.locale === 'en' ? '中' : 'EN'}
+			</button>
+			<button class="ghost" title={i18n.t('sidebar.quickConnect')} onclick={() => (showQuick = !showQuick)}>⚡</button>
+			<button class="ghost" title={i18n.t('sidebar.newSite')} onclick={newSite}>＋</button>
 		</div>
 	</div>
 
 	{#if showQuick}
 		<form class="quick" onsubmit={quickConnect}>
-			<input placeholder="Host" bind:value={qHost} required />
+			<input placeholder={i18n.t('common.host')} bind:value={qHost} required />
 			<div class="row">
-				<input class="grow" placeholder="User" bind:value={qUser} required />
+				<input class="grow" placeholder={i18n.t('common.user')} bind:value={qUser} required />
 				<input class="port" type="number" placeholder="22" bind:value={qPort} />
 			</div>
-			<input type="password" placeholder="Password" bind:value={qPass} />
-			<button type="submit">Connect</button>
+			<input type="password" placeholder={i18n.t('common.password')} bind:value={qPass} />
+			<button type="submit">{i18n.t('common.connect')}</button>
 		</form>
 	{/if}
 
-	<input class="filter" placeholder="Search sites…" bind:value={filter} />
+	<input class="filter" placeholder={i18n.t('sidebar.search')} bind:value={filter} />
 
 	<ul class="sites">
 		{#each visibleSites as site (site.id)}
 			<li>
-				<button class="site" ondblclick={() => app.connectSite(site)} title="Double-click to connect">
+				<button class="site" ondblclick={() => app.connectSite(site)} title={`${site.username}@${site.host}:${site.port}`}>
 					<span class="name">{site.name}</span>
 					<span class="addr">{site.username}@{site.host}:{site.port}</span>
 				</button>
 				<div class="site-actions">
-					<button class="ghost sm" title="Edit" onclick={() => editSite(site)}>✎</button>
+					<button class="ghost sm" title={i18n.t('common.edit')} onclick={() => editSite(site)}>✎</button>
 					<button
 						class="ghost sm"
 						class:danger={confirmingDelete === site.id}
-						title="Delete"
+						title={i18n.t('common.delete')}
 						onclick={() => confirmDelete(site)}
 					>
-						{confirmingDelete === site.id ? 'Sure?' : '🗑'}
+						{confirmingDelete === site.id ? i18n.t('common.sure') : '🗑'}
 					</button>
 				</div>
 			</li>
 		{/each}
 		{#if !visibleSites.length}
-			<li class="empty">No sites yet — click ＋ to add one.</li>
+			<li class="empty">{i18n.t('sidebar.empty')}</li>
 		{/if}
 	</ul>
 </aside>
@@ -221,6 +225,10 @@
 	.ghost.sm {
 		padding: 4px 6px;
 		border: none;
+	}
+	.ghost.lang {
+		min-width: 28px;
+		font-size: 11px;
 	}
 	.ghost.danger {
 		color: #f48771;

@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
 	import { app } from '$lib/state.svelte';
+	import { i18n } from '$lib/i18n.svelte';
 	import type { AuthMethod, Site, SiteInput } from './types';
 
 	interface Props {
@@ -69,34 +70,34 @@
 	}}
 >
 	<form class="dialog" onsubmit={save}>
-		<h2>{editing ? 'Edit site' : 'New site'}</h2>
+		<h2>{editing ? i18n.t('site.edit') : i18n.t('site.new')}</h2>
 
-		<label>Name<input bind:value={name} required /></label>
-		<label>Host<input bind:value={host} required /></label>
+		<label>{i18n.t('site.name')}<input bind:value={name} required /></label>
+		<label>{i18n.t('common.host')}<input bind:value={host} required /></label>
 		<div class="row">
-			<label class="grow">User<input bind:value={username} required /></label>
-			<label class="port">Port<input type="number" min="1" max="65535" bind:value={port} /></label>
+			<label class="grow">{i18n.t('common.user')}<input bind:value={username} required /></label>
+			<label class="port">{i18n.t('common.port')}<input type="number" min="1" max="65535" bind:value={port} /></label>
 		</div>
 
 		<label>
-			Auth
+			{i18n.t('site.auth')}
 			<select bind:value={authType}>
-				<option value="password">Password</option>
-				<option value="publicKey">Public key</option>
-				<option value="keyboardInteractive">Keyboard-interactive</option>
-				<option value="agent">SSH agent</option>
+				<option value="password">{i18n.t('auth.password')}</option>
+				<option value="publicKey">{i18n.t('auth.publicKey')}</option>
+				<option value="keyboardInteractive">{i18n.t('auth.keyboardInteractive')}</option>
+				<option value="agent">{i18n.t('auth.agent')}</option>
 			</select>
 		</label>
 
 		{#if authType === 'publicKey'}
-			<label>Private key path<input bind:value={keyPath} placeholder="~/.ssh/id_ed25519" /></label>
+			<label>{i18n.t('site.keyPath')}<input bind:value={keyPath} placeholder="~/.ssh/id_ed25519" /></label>
 			<label>
-				Key passphrase {#if editing}<span class="hint">(blank = keep)</span>{/if}
+				{i18n.t('site.passphrase')} {#if editing}<span class="hint">{i18n.t('site.blankKeep')}</span>{/if}
 				<input type="password" bind:value={password} />
 			</label>
 		{:else if authType === 'password' || authType === 'keyboardInteractive'}
 			<label>
-				Password {#if editing}<span class="hint">(blank = keep)</span>{/if}
+				{i18n.t('common.password')} {#if editing}<span class="hint">{i18n.t('site.blankKeep')}</span>{/if}
 				<input type="password" bind:value={password} />
 			</label>
 		{/if}
@@ -104,8 +105,8 @@
 		{#if errorMsg}<p class="error">{errorMsg}</p>{/if}
 
 		<div class="actions">
-			<button type="button" class="ghost" onclick={onclose}>Cancel</button>
-			<button type="submit" disabled={saving}>{saving ? 'Saving…' : 'Save'}</button>
+			<button type="button" class="ghost" onclick={onclose}>{i18n.t('common.cancel')}</button>
+			<button type="submit" disabled={saving}>{saving ? i18n.t('common.saving') : i18n.t('common.save')}</button>
 		</div>
 	</form>
 </div>

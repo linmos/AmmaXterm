@@ -5,6 +5,7 @@
 	import TerminalTabs from '$lib/session/TerminalTabs.svelte';
 	import SftpPanel from '$lib/sftp/SftpPanel.svelte';
 	import HostKeyDialog from '$lib/HostKeyDialog.svelte';
+	import { i18n } from '$lib/i18n.svelte';
 
 	let showFiles = $state(false);
 
@@ -26,7 +27,7 @@
 			disabled={!activeSession}
 			onclick={() => (showFiles = !showFiles)}
 		>
-			Files
+			{i18n.t('common.files')}
 		</button>
 	</div>
 

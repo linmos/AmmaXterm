@@ -2,6 +2,7 @@
 	import { onMount } from 'svelte';
 	import { invoke } from '@tauri-apps/api/core';
 	import { open, save } from '@tauri-apps/plugin-dialog';
+	import { i18n } from '$lib/i18n.svelte';
 	import type { FileEntry } from './types';
 
 	interface Props {
@@ -15,8 +16,8 @@
 	let loading = $state(false);
 	let busy = $state(false);
 
-	let newFolder = $state<string | null>(null); // inline new-folder input value
-	let renaming = $state<string | null>(null); // entry name being renamed
+	let newFolder = $state<string | null>(null);
+	let renaming = $state<string | null>(null);
 	let renameValue = $state('');
 	let confirmingDelete = $state<string | null>(null);
 
@@ -96,7 +97,7 @@
 	}
 
 	async function upload() {
-		const selected = await open({ multiple: false, title: 'Choose a file to upload' });
+		const selected = await open({ multiple: false, title: i18n.t('sftp.upload') });
 		if (typeof selected !== 'string') return;
 		await run(() =>
 			invoke('sftp_upload', {
@@ -108,7 +109,7 @@
 	}
 
 	async function download(entry: FileEntry) {
-		const target = await save({ defaultPath: entry.name, title: `Download ${entry.name}` });
+		const target = await save({ defaultPath: entry.name, title: `${i18n.t('sftp.download')} ${entry.name}` });
 		if (typeof target !== 'string') return;
 		await run(() =>
 			invoke('sftp_download', {
@@ -131,29 +132,29 @@
 
 <div class="sftp">
 	<div class="bar">
-		<button onclick={up} title="Up one level" disabled={busy}>↑</button>
+		<button onclick={up} title={i18n.t('sftp.up')} disabled={busy}>↑</button>
 		<input
 			class="path"
-			aria-label="Remote path"
+			aria-label="path"
 			bind:value={path}
 			onkeydown={(e) => e.key === 'Enter' && list()}
 		/>
-		<button onclick={() => (newFolder = '')} title="New folder" disabled={busy}>＋</button>
-		<button onclick={upload} title="Upload file" disabled={busy}>⬆</button>
-		<button onclick={list} title="Refresh" disabled={loading || busy}>⟳</button>
+		<button onclick={() => (newFolder = '')} title={i18n.t('sftp.newFolder')} disabled={busy}>＋</button>
+		<button onclick={upload} title={i18n.t('sftp.upload')} disabled={busy}>⬆</button>
+		<button onclick={list} title={i18n.t('sftp.refresh')} disabled={loading || busy}>⟳</button>
 	</div>
 
 	{#if newFolder !== null}
 		<div class="new-folder">
 			<input
-				placeholder="Folder name"
+				placeholder={i18n.t('sftp.folderName')}
 				bind:value={newFolder}
 				onkeydown={(e) => {
 					if (e.key === 'Enter') createFolder();
 					else if (e.key === 'Escape') newFolder = null;
 				}}
 			/>
-			<button onclick={createFolder}>Create</button>
+			<button onclick={createFolder}>{i18n.t('sftp.create')}</button>
 		</div>
 	{/if}
 
@@ -180,13 +181,13 @@
 					</button>
 					<div class="ops">
 						{#if !entry.is_dir}
-							<button class="sm" title="Download" onclick={() => download(entry)} disabled={busy}
+							<button class="sm" title={i18n.t('sftp.download')} onclick={() => download(entry)} disabled={busy}
 								>⬇</button
 							>
 						{/if}
 						<button
 							class="sm"
-							title="Rename"
+							title={i18n.t('sftp.rename')}
 							onclick={() => {
 								renaming = entry.name;
 								renameValue = entry.name;
@@ -196,18 +197,18 @@
 						<button
 							class="sm"
 							class:danger={confirmingDelete === entry.name}
-							title="Delete"
+							title={i18n.t('common.delete')}
 							onclick={() => del(entry)}
 							disabled={busy}
 						>
-							{confirmingDelete === entry.name ? 'Sure?' : '🗑'}
+							{confirmingDelete === entry.name ? i18n.t('common.sure') : '🗑'}
 						</button>
 					</div>
 				{/if}
 			</li>
 		{/each}
 		{#if !entries.length && !loading && !errorMsg}
-			<li class="empty">empty</li>
+			<li class="empty">{i18n.t('sftp.empty')}</li>
 		{/if}
 	</ul>
 </div>

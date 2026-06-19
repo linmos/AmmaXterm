@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { app } from '$lib/state.svelte';
+	import { i18n } from '$lib/i18n.svelte';
 	import Terminal from '$lib/terminal/Terminal.svelte';
 </script>
 
@@ -11,7 +12,7 @@
 					<span class="dot {tab.status}"></span>
 					<span class="title">{tab.title}</span>
 				</button>
-				<button class="close" title="Close" onclick={() => app.closeTab(tab.key)}>×</button>
+				<button class="close" title={i18n.t('common.delete')} onclick={() => app.closeTab(tab.key)}>×</button>
 			</div>
 		{/each}
 	</div>
@@ -20,7 +21,7 @@
 		{#each app.tabs as tab (tab.key)}
 			<div class="pane" class:active={tab.key === app.activeKey}>
 				{#if tab.status === 'error'}
-					<div class="msg error">Connection failed:<br />{tab.error}</div>
+					<div class="msg error">{i18n.t('tabs.failed')}<br />{tab.error}</div>
 				{:else}
 					<Terminal
 						onReady={(api) => app.setTabApi(tab.key, api)}
@@ -28,14 +29,14 @@
 						onResize={(size) => app.resizeTab(tab.key, size)}
 					/>
 					{#if tab.status === 'closed'}
-						<div class="badge">session closed</div>
+						<div class="badge">{i18n.t('tabs.closed')}</div>
 					{/if}
 				{/if}
 			</div>
 		{/each}
 		{#if !app.tabs.length}
 			<div class="msg empty">
-				No active sessions.<br />Connect to a site or use Quick Connect (⚡).
+				{i18n.t('tabs.empty')}<br />{i18n.t('tabs.emptyHint')}
 			</div>
 		{/if}
 	</div>

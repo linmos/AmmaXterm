@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { app } from '$lib/state.svelte';
+	import { i18n } from '$lib/i18n.svelte';
 
 	const prompt = $derived(app.hostKeyPrompt);
 </script>
@@ -13,24 +14,21 @@
 		}}
 	>
 		<div class="dialog" class:changed={prompt.changed}>
-			<h2>{prompt.changed ? '⚠ Host key changed' : 'Unknown host key'}</h2>
+			<h2>{prompt.changed ? i18n.t('hostkey.changedTitle') : i18n.t('hostkey.unknownTitle')}</h2>
 			<p class="who">{prompt.host}:{prompt.port}</p>
 
 			{#if prompt.changed}
-				<p class="warn">
-					The server's host key differs from the one previously saved. This may indicate a
-					man-in-the-middle attack. Only continue if you know why the key changed.
-				</p>
+				<p class="warn">{i18n.t('hostkey.changedWarn')}</p>
 			{:else}
-				<p>First time connecting to this host. Verify the fingerprint before trusting it.</p>
+				<p>{i18n.t('hostkey.firstTime')}</p>
 			{/if}
 
 			<p class="fp">{prompt.fingerprint}</p>
 
 			<div class="actions">
-				<button class="ghost" onclick={() => app.respondHostKey(false)}>Reject</button>
+				<button class="ghost" onclick={() => app.respondHostKey(false)}>{i18n.t('hostkey.reject')}</button>
 				<button class:danger={prompt.changed} onclick={() => app.respondHostKey(true)}>
-					{prompt.changed ? 'Trust anyway' : 'Trust'}
+					{prompt.changed ? i18n.t('hostkey.trustAnyway') : i18n.t('hostkey.trust')}
 				</button>
 			</div>
 		</div>
