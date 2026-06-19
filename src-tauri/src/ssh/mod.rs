@@ -197,3 +197,107 @@ async fn run_session(
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    //! M0 live verification against a Docker OpenSSH server.
+    //!
+    //! Start the target first:
+    //!   docker run -d --name ammax-sshd -e PASSWORD_ACCESS=true \
+    //!     -e USER_NAME=amos -e USER_PASSWORD=ammax123 -p 2222:2222 \
+    //!     lscr.io/linuxserver/openssh-server:latest
+    //! Then run:
+    //!   cargo test --manifest-path src-tauri/Cargo.toml --lib ssh::tests -- --ignored --nocapture
+
+    use super::*;
+    use std::time::Duration;
+
+    fn test_opts() -> ConnectOptions {
+        ConnectOptions {
+            host: "127.0.0.1".into(),
+            port: 2222,
+            username: "amos".into(),
+            password: "ammax123".into(),
+            cols: 80,
+            rows: 24,
+        }
+    }
+
+    #[tokio::test]
+    #[ignore = "requires the Docker OpenSSH container on 127.0.0.1:2222"]
+    async fn m0_shell_sftp_and_hostkey() {
+        let known_hosts = std::env::temp_dir().join("ammax_test_known_hosts");
+        let _ = std::fs::remove_file(&known_hosts);
+
+        // 1) Connect, verify host key (TOFU learns it), open an interactive shell.
+        let (handle, mut channel) = open_shell(&test_opts(), known_hosts.clone())
+            .await
+            .expect("open_shell should succeed against the Docker SSH server");
+
+        // 2) Shell streaming: send a command and read until the marker comes back.
+        channel
+            .data_bytes(b"echo M0_MARKER_OK\n".to_vec())
+            .await
+            .expect("send input");
+        let mut out = String::new();
+        let saw_marker = tokio::time::timeout(Duration::from_secs(10), async {
+            loop {
+                match channel.wait().await {
+                    Some(ChannelMsg::Data { ref data }) => {
+                        out.push_str(&String::from_utf8_lossy(&data[..]));
+                        if out.contains("M0_MARKER_OK") {
+                            return true;
+                        }
+                    }
+                    Some(ChannelMsg::Eof) | Some(ChannelMsg::Close) | None => return false,
+                    _ => {}
+                }
+            }
+        })
+        .await
+        .unwrap_or(false);
+        assert!(saw_marker, "shell did not echo the marker; output so far:\n{out}");
+
+        // 3) SFTP on the SAME connection: list + upload/download round-trip.
+        let entries = crate::sftp::list_dir(&handle, ".")
+            .await
+            .expect("sftp list_dir");
+        println!("[m0] sftp list '.' -> {} entries", entries.len());
+
+        let up = std::env::temp_dir().join("ammax_up.txt");
+        let down = std::env::temp_dir().join("ammax_down.txt");
+        let payload = "hello-from-ammaxterm-m0";
+        std::fs::write(&up, payload).unwrap();
+        crate::sftp::upload(&handle, up.to_str().unwrap(), "ammax_remote.txt")
+            .await
+            .expect("sftp upload");
+        crate::sftp::download(&handle, "ammax_remote.txt", down.to_str().unwrap())
+            .await
+            .expect("sftp download");
+        assert_eq!(
+            std::fs::read_to_string(&down).unwrap(),
+            payload,
+            "SFTP round-trip content mismatch"
+        );
+
+        // 4) Reconnect: the learned key must verify (match path, no re-learn).
+        let (handle2, _ch2) = open_shell(&test_opts(), known_hosts.clone())
+            .await
+            .expect("reconnect should pass host-key verification");
+        let kh = std::fs::read_to_string(&known_hosts).unwrap();
+        let key_lines = kh
+            .lines()
+            .filter(|l| !l.trim().is_empty() && !l.starts_with('#'))
+            .count();
+        assert_eq!(
+            key_lines, 1,
+            "known_hosts should hold exactly one learned key (matched, not re-learned):\n{kh}"
+        );
+
+        drop(handle2);
+        drop(handle);
+        let _ = std::fs::remove_file(&up);
+        let _ = std::fs::remove_file(&down);
+        println!("[m0] OK: shell streaming + SFTP round-trip + host-key TOFU/reconnect");
+    }
+}
