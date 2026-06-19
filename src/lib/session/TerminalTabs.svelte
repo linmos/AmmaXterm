@@ -56,6 +56,7 @@
 						onReady={(api) => app.setTabApi(tab.key, api)}
 						onData={(data) => app.sendInput(tab.key, data)}
 						onResize={(size) => app.resizeTab(tab.key, size)}
+						onCwd={(p) => app.setTabCwd(tab.key, p)}
 						fontSize={settings.s.fontSize}
 						fontFamily={settings.s.fontFamily}
 						scrollback={settings.s.scrollback}

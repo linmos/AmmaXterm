@@ -16,6 +16,8 @@
 		onResize?: (size: TerminalSize) => void;
 		/** Called once the terminal is ready, handing back an imperative API. */
 		onReady?: (api: TerminalApi) => void;
+		/** Called with the shell's reported cwd (OSC 7 / OSC 9;9), for follow-cd. */
+		onCwd?: (path: string) => void;
 		fontSize?: number;
 		fontFamily?: string;
 		scrollback?: number;
@@ -26,6 +28,7 @@
 		onData,
 		onResize,
 		onReady,
+		onCwd,
 		fontSize = 14,
 		fontFamily = 'Consolas, "Cascadia Mono", "DejaVu Sans Mono", monospace',
 		scrollback = 5000,
@@ -127,6 +130,25 @@
 
 		term.onData((data) => onData?.(data));
 		term.onResize((size) => onResize?.(size));
+
+		// Follow-cd (FT-6): capture the shell's reported working directory.
+		// OSC 7 carries a file:// URI; ConEmu's OSC 9;9 carries a raw path.
+		term.parser.registerOscHandler(7, (data) => {
+			try {
+				const url = new URL(data);
+				if (url.pathname) onCwd?.(decodeURIComponent(url.pathname));
+			} catch {
+				// Not a URI we understand; ignore.
+			}
+			return true;
+		});
+		term.parser.registerOscHandler(9, (data) => {
+			if (data.startsWith('9;')) {
+				onCwd?.(data.slice(2));
+				return true;
+			}
+			return false;
+		});
 
 		// Copy / paste (TM-4) + search toggle (TM-10): Ctrl+Shift+C/V/F.
 		term.attachCustomKeyEventHandler((e) => {

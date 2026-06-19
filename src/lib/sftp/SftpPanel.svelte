@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, untrack } from 'svelte';
 	import { invoke } from '@tauri-apps/api/core';
 	import { open, save } from '@tauri-apps/plugin-dialog';
 	import { app } from '$lib/state.svelte';
@@ -34,6 +34,20 @@
 	// Dual-pane (FT-10): local browser alongside the remote listing.
 	let dual = $state(false);
 	let localPath = $state('');
+
+	// Follow-cd (FT-6): navigate to the shell's cwd when it changes.
+	let followCd = $state(false);
+	const tabCwd = $derived(app.tabs.find((t) => t.sessionId === sessionId)?.cwd);
+	$effect(() => {
+		const cwd = tabCwd;
+		if (!followCd || !cwd) return;
+		untrack(() => {
+			if (cwd !== path) {
+				path = cwd;
+				list();
+			}
+		});
+	});
 	function localJoin(name: string): string {
 		const sep = localPath.includes('\\') ? '\\' : '/';
 		return localPath.replace(/[\\/]+$/, '') + sep + name;
@@ -213,6 +227,7 @@
 		<button onclick={() => (newFolder = '')} title={i18n.t('sftp.newFolder')} disabled={busy}>＋</button>
 		<button onclick={upload} title={i18n.t('sftp.upload')} disabled={busy}>⬆</button>
 		<button class:on={dual} onclick={() => (dual = !dual)} title={i18n.t('sftp.dual')}>⇆</button>
+		<button class:on={followCd} onclick={() => (followCd = !followCd)} title={i18n.t('sftp.followCd')}>📍</button>
 		<button onclick={list} title={i18n.t('sftp.refresh')} disabled={loading || busy}>⟳</button>
 	</div>
 

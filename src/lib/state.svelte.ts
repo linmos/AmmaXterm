@@ -24,6 +24,8 @@ export interface Tab {
 	buffer: Uint8Array[];
 	size: TerminalSize;
 	logging: boolean;
+	/** Last cwd reported by the shell (OSC 7 / 9;9), for SFTP follow-cd. */
+	cwd?: string;
 }
 
 /** A generated keypair returned by `keygen_generate` (AK-3). */
@@ -374,6 +376,12 @@ class AppState {
 		for (const chunk of tab.buffer) api.write(chunk);
 		tab.buffer = [];
 		if (this.activeKey === key) api.focus();
+	}
+
+	/** Record the shell's reported cwd for a tab (drives SFTP follow-cd). */
+	setTabCwd(key: string, path: string) {
+		const tab = this.tabs.find((t) => t.key === key);
+		if (tab) tab.cwd = path;
 	}
 
 	sendInput(key: string, data: string) {
