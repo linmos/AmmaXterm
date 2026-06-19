@@ -55,19 +55,20 @@ pub async fn ssh_connect(
 }
 
 /// Resolve a site's auth method into a connect-time credential, fetching any
-/// secret from the keychain keyed by the site's own id (TM-2).
-fn resolve_auth(site_id: &str, auth: &AuthMethod) -> AppResult<AuthCredential> {
+/// secret keyed by the site's own id — preferring the OS keychain, falling back
+/// to the encrypted vault when no keychain is available (TM-2 / AK-1 / AK-4).
+fn resolve_auth(site_id: &str, auth: &AuthMethod, vault: &VaultState) -> AppResult<AuthCredential> {
     Ok(match auth {
         AuthMethod::Password => AuthCredential::Password(
-            secrets::get(SecretKind::Password, site_id)?
+            secrets::get_pref(SecretKind::Password, site_id, vault)?
                 .ok_or_else(|| AppError::Auth("no saved password for this site".into()))?,
         ),
         AuthMethod::PublicKey { key_path } => AuthCredential::PublicKey {
             key_path: key_path.clone(),
-            passphrase: secrets::get(SecretKind::Passphrase, site_id)?,
+            passphrase: secrets::get_pref(SecretKind::Passphrase, site_id, vault)?,
         },
         AuthMethod::KeyboardInteractive => AuthCredential::KeyboardInteractive(
-            secrets::get(SecretKind::Password, site_id)?
+            secrets::get_pref(SecretKind::Password, site_id, vault)?
                 .ok_or_else(|| AppError::Auth("no saved secret for this site".into()))?,
         ),
         AuthMethod::Agent => {
@@ -92,6 +93,7 @@ pub async fn site_connect(
     prompts: State<'_, HostKeyPrompts>,
     settings: State<'_, SettingsStore>,
     tunnels: State<'_, TunnelManager>,
+    vault: State<'_, VaultState>,
 ) -> AppResult<String> {
     let site = store.get(&site_id)?;
     let known_hosts = config_dir(&app)?.join("known_hosts");
@@ -103,7 +105,7 @@ pub async fn site_connect(
         .unwrap_or_else(|| settings.get().keepalive_secs);
     let site_tunnels = site.tunnels.clone();
 
-    let auth = resolve_auth(&site_id, &site.auth)?;
+    let auth = resolve_auth(&site_id, &site.auth, vault.inner())?;
 
     // Resolve the ProxyJump chain (TM-9): each entry is the id of another saved
     // site whose own auth/secret is used for that hop. Self-references are
@@ -114,7 +116,7 @@ pub async fn site_connect(
             continue;
         }
         let j = store.get(jump_id)?;
-        let jauth = resolve_auth(&j.id, &j.auth)?;
+        let jauth = resolve_auth(&j.id, &j.auth, vault.inner())?;
         jumps.push(HopRequest {
             host: j.host,
             port: j.port,
@@ -315,26 +317,38 @@ pub fn site_update(id: String, input: SiteInput, store: State<'_, SiteStore>) ->
     store.update(&id, input)
 }
 
-/// Delete a site and its stored secrets.
+/// Delete a site and its stored secrets (keychain + vault).
 #[tauri::command]
-pub fn site_delete(id: String, store: State<'_, SiteStore>) -> AppResult<()> {
+pub fn site_delete(
+    id: String,
+    store: State<'_, SiteStore>,
+    vault: State<'_, VaultState>,
+) -> AppResult<()> {
     store.delete(&id)?;
-    let _ = secrets::delete_all(&id);
+    let _ = secrets::delete_all_pref(&id, vault.inner());
     Ok(())
 }
 
-// --- Secrets (AK-1) ---
+// --- Secrets (AK-1; vault fallback AK-4) ---
 
-/// Store/replace a site's password in the OS keychain.
+/// Store/replace a site's password (OS keychain, or the vault as fallback).
 #[tauri::command]
-pub fn site_set_password(site_id: String, password: String) -> AppResult<()> {
-    secrets::set(SecretKind::Password, &site_id, &password)
+pub fn site_set_password(
+    site_id: String,
+    password: String,
+    vault: State<'_, VaultState>,
+) -> AppResult<()> {
+    secrets::set_pref(SecretKind::Password, &site_id, &password, vault.inner())
 }
 
-/// Store/replace a site's private-key passphrase in the OS keychain.
+/// Store/replace a site's private-key passphrase (keychain, or vault fallback).
 #[tauri::command]
-pub fn site_set_passphrase(site_id: String, passphrase: String) -> AppResult<()> {
-    secrets::set(SecretKind::Passphrase, &site_id, &passphrase)
+pub fn site_set_passphrase(
+    site_id: String,
+    passphrase: String,
+    vault: State<'_, VaultState>,
+) -> AppResult<()> {
+    secrets::set_pref(SecretKind::Passphrase, &site_id, &passphrase, vault.inner())
 }
 
 // --- Import / export (SM-7, SM-8) ---
