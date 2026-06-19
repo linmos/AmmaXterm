@@ -1,5 +1,6 @@
 import { invoke, Channel } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
+import { settings } from './settings.svelte';
 import type { ImportedSite, Site, SiteInput } from './sites/types';
 import type { TerminalApi, TerminalSize } from './terminal/types';
 
@@ -10,6 +11,8 @@ export type TabStatus = 'connecting' | 'connected' | 'closed' | 'error';
 export interface Tab {
 	key: string;
 	sessionId?: string;
+	/** Saved-site id when the tab came from a site (enables reconnect). */
+	siteId?: string;
 	title: string;
 	host: string;
 	status: TabStatus;
@@ -18,6 +21,7 @@ export interface Tab {
 	channel: Channel<string>;
 	buffer: Uint8Array[];
 	size: TerminalSize;
+	logging: boolean;
 }
 
 export interface HostKeyPrompt {
@@ -54,7 +58,16 @@ class AppState {
 		await this.loadSites();
 		await listen<string>('ssh://closed', (event) => {
 			const tab = this.tabs.find((t) => t.sessionId === event.payload);
-			if (tab && tab.status === 'connected') tab.status = 'closed';
+			if (tab && tab.status === 'connected') {
+				tab.status = 'closed';
+				tab.logging = false;
+				// Auto-reconnect saved-session tabs after an unexpected drop (TM-8).
+				if (settings.s.autoReconnect && tab.siteId) {
+					setTimeout(() => {
+						if (tab.status === 'closed') void this.reconnect(tab.key);
+					}, 1000);
+				}
+			}
 		});
 		await listen<HostKeyPrompt>('ssh://host-key-prompt', (event) => {
 			this.hostKeyPrompt = event.payload;
@@ -154,6 +167,15 @@ class AppState {
 		});
 	}
 
+	/** Wire a tab's output channel to its terminal (buffering pre-mount). */
+	private bindChannel(tab: Tab) {
+		tab.channel.onmessage = (b64) => {
+			const bytes = b64ToBytes(b64);
+			if (tab.api) tab.api.write(bytes);
+			else tab.buffer.push(bytes);
+		};
+	}
+
 	/** Push a new tab and return the reactive (proxied) element. */
 	private newTab(title: string, host: string): Tab {
 		const base: Tab = {
@@ -163,15 +185,12 @@ class AppState {
 			status: 'connecting',
 			channel: new Channel<string>(),
 			buffer: [],
-			size: { cols: 80, rows: 24 }
+			size: { cols: 80, rows: 24 },
+			logging: false
 		};
 		this.tabs.push(base);
 		const tab = this.tabs[this.tabs.length - 1];
-		tab.channel.onmessage = (b64) => {
-			const bytes = b64ToBytes(b64);
-			if (tab.api) tab.api.write(bytes);
-			else tab.buffer.push(bytes);
-		};
+		this.bindChannel(tab);
 		this.activeKey = tab.key;
 		return tab;
 	}
@@ -192,6 +211,7 @@ class AppState {
 
 	async connectSite(site: Site) {
 		const tab = this.newTab(site.name, site.host);
+		tab.siteId = site.id;
 		try {
 			tab.sessionId = await invoke<string>('site_connect', {
 				siteId: site.id,
@@ -204,6 +224,45 @@ class AppState {
 			tab.status = 'error';
 			tab.error = errMessage(err);
 		}
+	}
+
+	/** Reconnect a closed/errored saved-session tab in place, reusing its terminal. */
+	async reconnect(key: string) {
+		const tab = this.tabs.find((t) => t.key === key);
+		if (!tab || !tab.siteId || tab.status === 'connecting' || tab.status === 'connected') return;
+		const site = this.sites.find((s) => s.id === tab.siteId);
+		if (!site) return;
+		tab.status = 'connecting';
+		tab.error = undefined;
+		tab.buffer = [];
+		try {
+			tab.sessionId = await invoke<string>('site_connect', {
+				siteId: site.id,
+				cols: tab.size.cols,
+				rows: tab.size.rows,
+				onOutput: tab.channel
+			});
+			tab.status = 'connected';
+			tab.api?.focus();
+		} catch (err) {
+			tab.status = 'error';
+			tab.error = errMessage(err);
+		}
+	}
+
+	/** Toggle session logging for a tab (TM-12); `path` is required to start. */
+	async startLog(key: string, path: string) {
+		const tab = this.tabs.find((t) => t.key === key);
+		if (!tab?.sessionId) return;
+		await invoke('session_start_log', { id: tab.sessionId, path });
+		tab.logging = true;
+	}
+
+	async stopLog(key: string) {
+		const tab = this.tabs.find((t) => t.key === key);
+		if (!tab?.sessionId) return;
+		await invoke('session_stop_log', { id: tab.sessionId }).catch(() => {});
+		tab.logging = false;
 	}
 
 	/** Called when a tab's terminal mounts; flushes any buffered output. */

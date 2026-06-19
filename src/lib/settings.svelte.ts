@@ -13,6 +13,7 @@ export interface Settings {
 	fontSize: number;
 	scrollback: number;
 	keepaliveSecs: number;
+	autoReconnect: boolean;
 }
 
 export const THEME_NAMES = ['dark', 'light'] as const;
@@ -44,7 +45,8 @@ const DEFAULTS: Settings = {
 	fontFamily: 'Consolas, "Cascadia Mono", "DejaVu Sans Mono", monospace',
 	fontSize: 14,
 	scrollback: 5000,
-	keepaliveSecs: 30
+	keepaliveSecs: 30,
+	autoReconnect: false
 };
 
 class AppSettings {

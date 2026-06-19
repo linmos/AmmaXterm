@@ -15,6 +15,7 @@
 	let fontSize = $state(init.fontSize);
 	let scrollback = $state(init.scrollback);
 	let keepaliveSecs = $state(init.keepaliveSecs);
+	let autoReconnect = $state(init.autoReconnect);
 	let saving = $state(false);
 	let errorMsg = $state<string | undefined>(undefined);
 
@@ -28,7 +29,8 @@
 			fontFamily,
 			fontSize: Number(fontSize),
 			scrollback: Number(scrollback),
-			keepaliveSecs: Number(keepaliveSecs)
+			keepaliveSecs: Number(keepaliveSecs),
+			autoReconnect
 		};
 		try {
 			await settings.save(next);
@@ -70,6 +72,10 @@
 		<label>
 			{i18n.t('settings.keepalive')} <span class="hint">{i18n.t('settings.keepaliveHint')}</span>
 			<input type="number" min="0" max="3600" bind:value={keepaliveSecs} />
+		</label>
+		<label class="check">
+			<input type="checkbox" bind:checked={autoReconnect} />
+			{i18n.t('settings.autoReconnect')}
 		</label>
 
 		{#if errorMsg}<p class="error">{errorMsg}</p>{/if}
@@ -133,6 +139,14 @@
 	.row {
 		display: flex;
 		gap: 10px;
+	}
+	.check {
+		flex-direction: row;
+		align-items: center;
+		gap: 8px;
+	}
+	.check input {
+		width: auto;
 	}
 	.grow {
 		flex: 1;

@@ -45,6 +45,9 @@ pub struct Settings {
     /// SSH keepalive interval in seconds; 0 disables (TM-8, applied at connect).
     #[serde(default = "default_keepalive")]
     pub keepalive_secs: u32,
+    /// Automatically reconnect a saved-session tab after an unexpected drop (TM-8).
+    #[serde(default)]
+    pub auto_reconnect: bool,
 }
 
 fn default_schema() -> u32 {
@@ -60,6 +63,7 @@ impl Default for Settings {
             font_size: default_font_size(),
             scrollback: default_scrollback(),
             keepalive_secs: default_keepalive(),
+            auto_reconnect: false,
         }
     }
 }

@@ -34,11 +34,20 @@ pub async fn ssh_connect(
     on_output: Channel<String>,
     manager: State<'_, SessionManager>,
     prompts: State<'_, HostKeyPrompts>,
+    settings: State<'_, SettingsStore>,
 ) -> AppResult<String> {
     let known_hosts = config_dir(&app)?.join("known_hosts");
     let prompts = prompts.inner().clone();
+    let keepalive = settings.get().keepalive_secs;
     manager
-        .connect(app, prompts, options.into_request(), known_hosts, on_output)
+        .connect(
+            app,
+            prompts,
+            options.into_request(),
+            known_hosts,
+            keepalive,
+            on_output,
+        )
         .await
 }
 
@@ -54,9 +63,11 @@ pub async fn site_connect(
     store: State<'_, SiteStore>,
     manager: State<'_, SessionManager>,
     prompts: State<'_, HostKeyPrompts>,
+    settings: State<'_, SettingsStore>,
 ) -> AppResult<String> {
     let site = store.get(&site_id)?;
     let known_hosts = config_dir(&app)?.join("known_hosts");
+    let keepalive = settings.get().keepalive_secs;
 
     let auth = match site.auth {
         AuthMethod::Password => AuthCredential::Password(
@@ -87,7 +98,14 @@ pub async fn site_connect(
         rows,
     };
     manager
-        .connect(app, prompts.inner().clone(), req, known_hosts, on_output)
+        .connect(
+            app,
+            prompts.inner().clone(),
+            req,
+            known_hosts,
+            keepalive,
+            on_output,
+        )
         .await
 }
 
@@ -116,6 +134,22 @@ pub async fn ssh_resize(
 #[tauri::command]
 pub async fn ssh_disconnect(id: String, manager: State<'_, SessionManager>) -> AppResult<()> {
     manager.disconnect(&id).await
+}
+
+/// Start logging a session's output to a local file (TM-12).
+#[tauri::command]
+pub async fn session_start_log(
+    id: String,
+    path: String,
+    manager: State<'_, SessionManager>,
+) -> AppResult<()> {
+    manager.start_log(&id, std::path::PathBuf::from(path)).await
+}
+
+/// Stop logging a session's output.
+#[tauri::command]
+pub async fn session_stop_log(id: String, manager: State<'_, SessionManager>) -> AppResult<()> {
+    manager.stop_log(&id).await
 }
 
 /// Resolve a pending host-key prompt with the user's trust decision (TM-6).

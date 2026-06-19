@@ -33,6 +33,8 @@ pub fn run() {
             commands::ssh_send_input,
             commands::ssh_resize,
             commands::ssh_disconnect,
+            commands::session_start_log,
+            commands::session_stop_log,
             commands::host_key_decision,
             commands::sftp_list,
             commands::sftp_upload,

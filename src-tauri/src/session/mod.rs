@@ -36,19 +36,22 @@ impl SessionManager {
 
     /// Open a new SSH session, spawn its streaming actor, and register it;
     /// returns the session id.
+    #[allow(clippy::too_many_arguments)]
     pub async fn connect(
         &self,
         app: AppHandle,
         prompts: HostKeyPrompts,
         req: ConnectRequest,
         known_hosts: PathBuf,
+        keepalive_secs: u32,
         output: Channel<String>,
     ) -> AppResult<String> {
         let prompter = HostKeyPrompter {
             app: app.clone(),
             prompts,
         };
-        let (handle, channel) = ssh::open_shell(&req, known_hosts, Some(prompter)).await?;
+        let (handle, channel) =
+            ssh::open_shell(&req, known_hosts, Some(prompter), keepalive_secs).await?;
         let id = format!("session-{}", self.counter.fetch_add(1, Ordering::Relaxed));
         let (tx, rx) = mpsc::channel(64);
         tauri::async_runtime::spawn(ssh::run_session(channel, rx, output, app, id.clone()));
@@ -92,6 +95,22 @@ impl SessionManager {
     pub async fn resize(&self, id: &str, cols: u32, rows: u32) -> AppResult<()> {
         self.sender(id)?
             .send(SessionCommand::Resize { cols, rows })
+            .await
+            .map_err(|_| AppError::Other("session is closed".into()))
+    }
+
+    /// Start logging a session's output to `path` (TM-12).
+    pub async fn start_log(&self, id: &str, path: PathBuf) -> AppResult<()> {
+        self.sender(id)?
+            .send(SessionCommand::StartLog(path))
+            .await
+            .map_err(|_| AppError::Other("session is closed".into()))
+    }
+
+    /// Stop logging a session's output.
+    pub async fn stop_log(&self, id: &str) -> AppResult<()> {
+        self.sender(id)?
+            .send(SessionCommand::StopLog)
             .await
             .map_err(|_| AppError::Other("session is closed".into()))
     }

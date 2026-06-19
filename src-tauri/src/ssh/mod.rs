@@ -71,7 +71,14 @@ pub(crate) struct ConnectRequest {
 /// Commands sent from the Tauri command layer to a running session actor.
 pub(crate) enum SessionCommand {
     Input(Vec<u8>),
-    Resize { cols: u32, rows: u32 },
+    Resize {
+        cols: u32,
+        rows: u32,
+    },
+    /// Begin appending shell output to a local file (TM-12).
+    StartLog(PathBuf),
+    /// Stop logging and flush the file.
+    StopLog,
     Close,
 }
 
@@ -255,12 +262,21 @@ fn forget_host(path: &PathBuf, host: &str, port: u16) -> std::io::Result<()> {
 }
 
 /// Connect, verify the host key, authenticate, and open an interactive shell.
+///
+/// `keepalive_secs` (0 = off) sets the SSH keepalive interval; if the peer stops
+/// answering, russh drops the connection and the session emits `ssh://closed`,
+/// which the frontend can act on to reconnect (TM-8).
 pub(crate) async fn open_shell(
     req: &ConnectRequest,
     known_hosts: PathBuf,
     prompter: Option<HostKeyPrompter>,
+    keepalive_secs: u32,
 ) -> AppResult<(SshHandle, russh::Channel<Msg>)> {
-    let config = Arc::new(client::Config::default());
+    let mut cfg = client::Config::default();
+    if keepalive_secs > 0 {
+        cfg.keepalive_interval = Some(Duration::from_secs(keepalive_secs as u64));
+    }
+    let config = Arc::new(cfg);
     let report = HostKeyReport::default();
     let handler = ClientHandler {
         host: req.host.clone(),
@@ -354,7 +370,10 @@ pub(crate) async fn run_session(
     app: AppHandle,
     id: String,
 ) {
+    use std::io::Write;
+
     let b64 = base64::engine::general_purpose::STANDARD;
+    let mut log: Option<std::io::BufWriter<std::fs::File>> = None;
 
     loop {
         tokio::select! {
@@ -368,6 +387,17 @@ pub(crate) async fn run_session(
                     Some(SessionCommand::Resize { cols, rows }) => {
                         let _ = channel.window_change(cols, rows, 0, 0).await;
                     }
+                    Some(SessionCommand::StartLog(path)) => {
+                        match std::fs::OpenOptions::new().create(true).append(true).open(&path) {
+                            Ok(f) => log = Some(std::io::BufWriter::new(f)),
+                            Err(_) => log = None,
+                        }
+                    }
+                    Some(SessionCommand::StopLog) => {
+                        if let Some(mut w) = log.take() {
+                            let _ = w.flush();
+                        }
+                    }
                     Some(SessionCommand::Close) | None => {
                         let _ = channel.eof().await;
                         break;
@@ -377,11 +407,17 @@ pub(crate) async fn run_session(
             msg = channel.wait() => {
                 match msg {
                     Some(ChannelMsg::Data { ref data }) => {
+                        if let Some(w) = log.as_mut() {
+                            let _ = w.write_all(&data[..]);
+                        }
                         if output.send(b64.encode(&data[..])).is_err() {
                             break;
                         }
                     }
                     Some(ChannelMsg::ExtendedData { ref data, .. }) => {
+                        if let Some(w) = log.as_mut() {
+                            let _ = w.write_all(&data[..]);
+                        }
                         let _ = output.send(b64.encode(&data[..]));
                     }
                     Some(ChannelMsg::Eof) | Some(ChannelMsg::Close) | None => break,
@@ -391,6 +427,9 @@ pub(crate) async fn run_session(
         }
     }
 
+    if let Some(mut w) = log.take() {
+        let _ = w.flush();
+    }
     let _ = app.emit("ssh://closed", &id);
 }
 
@@ -426,7 +465,7 @@ mod tests {
         let _ = std::fs::remove_file(&known_hosts);
 
         // 1) Connect (TOFU learns the key — no prompter in tests) + open a shell.
-        let (handle, mut channel) = open_shell(&test_request(), known_hosts.clone(), None)
+        let (handle, mut channel) = open_shell(&test_request(), known_hosts.clone(), None, 0)
             .await
             .expect("open_shell should succeed against the Docker SSH server");
 
@@ -480,7 +519,7 @@ mod tests {
         );
 
         // 4) Reconnect: the learned key must verify (match path, no re-learn).
-        let (handle2, _ch2) = open_shell(&test_request(), known_hosts.clone(), None)
+        let (handle2, _ch2) = open_shell(&test_request(), known_hosts.clone(), None, 0)
             .await
             .expect("reconnect should pass host-key verification");
         let kh = std::fs::read_to_string(&known_hosts).unwrap();
