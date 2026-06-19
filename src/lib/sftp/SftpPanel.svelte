@@ -187,6 +187,40 @@
 		);
 	}
 
+	// Per-row actions: hidden until hover (⋯ button) and on right-click, shown as
+	// a context menu instead of an always-visible icon column.
+	let menu = $state<{ entry: FileEntry; x: number; y: number } | null>(null);
+	function openMenu(entry: FileEntry, e: MouseEvent) {
+		e.preventDefault();
+		e.stopPropagation();
+		const W = 180;
+		const H = 168;
+		menu = {
+			entry,
+			x: Math.min(e.clientX, window.innerWidth - W),
+			y: Math.min(e.clientY, window.innerHeight - H)
+		};
+	}
+	function closeMenu() {
+		menu = null;
+		confirmingDelete = null;
+	}
+	function startRename(entry: FileEntry) {
+		renaming = entry.name;
+		renameValue = entry.name;
+	}
+	/** Run a menu action and close the menu. */
+	function act(fn: () => void) {
+		fn();
+		closeMenu();
+	}
+	/** Delete keeps the two-step confirm: first click arms, second deletes. */
+	async function deleteFromMenu(entry: FileEntry) {
+		const wasArmed = confirmingDelete === entry.name;
+		await del(entry);
+		if (wasArmed) menu = null;
+	}
+
 	async function upload() {
 		const selected = await open({ multiple: true, title: i18n.t('sftp.upload') });
 		const files = Array.isArray(selected) ? selected : typeof selected === 'string' ? [selected] : [];
@@ -332,7 +366,12 @@
 								}}
 							/>
 						{:else}
-							<button class="row" class:dir={entry.is_dir} onclick={() => openEntry(entry)}>
+							<button
+								class="row"
+								class:dir={entry.is_dir}
+								onclick={() => openEntry(entry)}
+								oncontextmenu={(e) => openMenu(entry, e)}
+							>
 								<span class="top">
 									<span class="name">{entry.is_dir ? '📁' : '📄'} {entry.name}</span>
 									{#if !entry.is_dir}<span class="size">{fmtSize(entry.size)}</span>{/if}
@@ -346,28 +385,7 @@
 								{/if}
 							</button>
 							<div class="ops">
-								{#if !entry.is_dir}
-									<button class="sm" title={i18n.t('sftp.download')} onclick={() => download(entry)} disabled={busy}>⬇</button>
-								{/if}
-								<button class="sm" title={i18n.t('sftp.chmod')} onclick={() => openChmod(entry)} disabled={busy}>⚙</button>
-								<button
-									class="sm"
-									title={i18n.t('sftp.rename')}
-									onclick={() => {
-										renaming = entry.name;
-										renameValue = entry.name;
-									}}
-									disabled={busy}>✎</button
-								>
-								<button
-									class="sm"
-									class:danger={confirmingDelete === entry.name}
-									title={i18n.t('common.delete')}
-									onclick={() => del(entry)}
-									disabled={busy}
-								>
-									{confirmingDelete === entry.name ? i18n.t('common.sure') : '🗑'}
-								</button>
+								<button class="menu-btn" title={i18n.t('sftp.more')} onclick={(e) => openMenu(entry, e)} disabled={busy}>⋯</button>
 							</div>
 						{/if}
 					</div>
@@ -375,6 +393,29 @@
 			</div>
 		{/if}
 	</div>
+
+	{#if menu}
+		<button
+			class="ctx-scrim"
+			aria-label="close menu"
+			onclick={closeMenu}
+			oncontextmenu={(e) => {
+				e.preventDefault();
+				closeMenu();
+			}}
+		></button>
+		{@const target = menu.entry}
+		<div class="ctx" style="left:{menu.x}px; top:{menu.y}px">
+			{#if !target.is_dir}
+				<button class="ctx-item" onclick={() => act(() => download(target))}>⬇ {i18n.t('sftp.download')}</button>
+			{/if}
+			<button class="ctx-item" onclick={() => act(() => openChmod(target))}>⚙ {i18n.t('sftp.chmod')}</button>
+			<button class="ctx-item" onclick={() => act(() => startRename(target))}>✎ {i18n.t('sftp.rename')}</button>
+			<button class="ctx-item danger" onclick={() => deleteFromMenu(target)}>
+				🗑 {confirmingDelete === target.name ? i18n.t('common.sure') : i18n.t('common.delete')}
+			</button>
+		</div>
+	{/if}
 
 	{#if chmodTarget}
 		<div class="chmod">
@@ -606,21 +647,71 @@
 	.ops {
 		display: flex;
 		gap: 2px;
-		padding-right: 4px;
+		padding-right: 6px;
 	}
-	.ops .sm {
-		padding: 2px 6px;
+	/* Single overflow button, revealed on row hover (or keyboard focus). */
+	.menu-btn {
+		padding: 2px 8px;
 		border: none;
 		border-radius: 4px;
 		background: transparent;
 		color: var(--vsc-sidebar-fg);
+		font-size: 16px;
+		line-height: 1;
 		cursor: pointer;
+		opacity: 0;
 	}
-	.ops .sm:hover {
+	.vrow:hover .menu-btn,
+	.menu-btn:focus-visible {
+		opacity: 0.85;
+	}
+	.menu-btn:hover {
+		opacity: 1;
 		background: var(--vsc-button-secondary-hover);
 	}
-	.ops .sm.danger {
+	.ctx-scrim {
+		position: fixed;
+		inset: 0;
+		z-index: 20;
+		border: none;
+		background: transparent;
+		cursor: default;
+	}
+	.ctx-scrim:hover {
+		background: transparent;
+	}
+	.ctx {
+		position: fixed;
+		z-index: 21;
+		min-width: 160px;
+		padding: 4px;
+		background: var(--vsc-widget-bg);
+		border: 1px solid var(--vsc-widget-border);
+		border-radius: var(--vsc-radius);
+		box-shadow: 0 4px 14px var(--vsc-widget-shadow);
+		display: flex;
+		flex-direction: column;
+	}
+	.ctx-item {
+		padding: 6px 10px;
+		border: none;
+		border-radius: 4px;
+		background: transparent;
+		color: var(--vsc-sidebar-fg);
+		font: 13px var(--vsc-font);
+		text-align: left;
+		cursor: pointer;
+	}
+	.ctx-item:hover {
+		background: var(--vsc-button-bg);
+		color: #fff;
+	}
+	.ctx-item.danger {
 		color: var(--vsc-red);
+	}
+	.ctx-item.danger:hover {
+		background: var(--vsc-red);
+		color: #fff;
 	}
 	.err {
 		margin: 6px 8px;
