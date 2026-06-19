@@ -26,6 +26,9 @@ fn default_scrollback() -> u32 {
 fn default_keepalive() -> u32 {
     30
 }
+fn default_copy_on_select() -> bool {
+    true
+}
 
 /// User-facing global defaults. Field defaults keep older/partial files valid.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -48,6 +51,9 @@ pub struct Settings {
     /// Automatically reconnect a saved-session tab after an unexpected drop (TM-8).
     #[serde(default)]
     pub auto_reconnect: bool,
+    /// Copy the terminal selection to the clipboard as soon as it is made (TM-4).
+    #[serde(default = "default_copy_on_select")]
+    pub copy_on_select: bool,
 }
 
 fn default_schema() -> u32 {
@@ -64,6 +70,7 @@ impl Default for Settings {
             scrollback: default_scrollback(),
             keepalive_secs: default_keepalive(),
             auto_reconnect: false,
+            copy_on_select: default_copy_on_select(),
         }
     }
 }

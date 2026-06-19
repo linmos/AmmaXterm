@@ -52,6 +52,7 @@
 						fontFamily={a.fontFamily}
 						scrollback={a.scrollback}
 						theme={a.theme}
+						copyOnSelect={settings.s.copyOnSelect}
 					/>
 					{#if tab.status === 'closed'}
 						<div class="badge">
