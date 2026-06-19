@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { save } from '@tauri-apps/plugin-dialog';
 	import { app } from '$lib/state.svelte';
 	import { settings } from '$lib/settings.svelte';
 	import SiteSidebar from '$lib/sites/SiteSidebar.svelte';
@@ -16,12 +17,28 @@
 		rightPanel = rightPanel === panel ? 'none' : panel;
 	}
 
+	// Session logging toggle for the active tab (TM-12).
+	async function toggleLog() {
+		const tab = app.activeTab;
+		if (!tab?.sessionId) return;
+		if (tab.logging) {
+			await app.stopLog(tab.key);
+			return;
+		}
+		const path = await save({
+			defaultPath: `${tab.host}-session.log`,
+			filters: [{ name: 'Log', extensions: ['log', 'txt'] }]
+		});
+		if (typeof path === 'string') await app.startLog(tab.key, path);
+	}
+
 	onMount(() => {
 		app.init();
 		settings.load();
 	});
 
 	const activeSession = $derived(app.activeTab?.sessionId);
+	const logging = $derived(app.activeTab?.logging ?? false);
 </script>
 
 <div class="app">
@@ -45,6 +62,15 @@
 				onclick={() => toggle('files')}
 			>
 				{i18n.t('common.files')}
+			</button>
+			<button
+				class="panel-toggle log"
+				class:active={logging}
+				disabled={!activeSession}
+				title={logging ? i18n.t('tabs.stopLog') : i18n.t('tabs.startLog')}
+				onclick={toggleLog}
+			>
+				{logging ? '⏺' : '▤'}
 			</button>
 		</div>
 	</div>
@@ -110,6 +136,10 @@
 		background: #0e639c;
 		border-color: #0e639c;
 		color: #fff;
+	}
+	.panel-toggle.log.active {
+		background: #7a1f1f;
+		border-color: #a33;
 	}
 	.panel-toggle:disabled {
 		opacity: 0.4;

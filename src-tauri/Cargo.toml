@@ -36,6 +36,8 @@ thiserror = "2.0.18"
 base64 = "0.22"
 uuid = { version = "1.23.3", features = ["v4"] }
 tauri-plugin-dialog = "2.7.1"
+# Remember window size/position/maximized across launches (clamped to monitors).
+tauri-plugin-window-state = "2"
 
 # OS keychain — per-platform native backends (AK-1).
 [target.'cfg(windows)'.dependencies]

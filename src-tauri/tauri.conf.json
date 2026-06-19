@@ -13,10 +13,11 @@
     "windows": [
       {
         "title": "AmmaXterm",
-        "width": 1200,
-        "height": 800,
-        "minWidth": 800,
-        "minHeight": 600
+        "width": 1024,
+        "height": 700,
+        "minWidth": 720,
+        "minHeight": 480,
+        "center": true
       }
     ],
     "security": {

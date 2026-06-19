@@ -1,21 +1,8 @@
 <script lang="ts">
-	import { save } from '@tauri-apps/plugin-dialog';
-	import { app, type Tab } from '$lib/state.svelte';
+	import { app } from '$lib/state.svelte';
 	import { i18n } from '$lib/i18n.svelte';
 	import { settings } from '$lib/settings.svelte';
 	import Terminal from '$lib/terminal/Terminal.svelte';
-
-	async function toggleLog(tab: Tab) {
-		if (tab.logging) {
-			await app.stopLog(tab.key);
-			return;
-		}
-		const path = await save({
-			defaultPath: `${tab.host}-session.log`,
-			filters: [{ name: 'Log', extensions: ['log', 'txt'] }]
-		});
-		if (typeof path === 'string') await app.startLog(tab.key, path);
-	}
 </script>
 
 <div class="tabs-wrap">
@@ -42,16 +29,6 @@
 						{/if}
 					</div>
 				{:else}
-					{#if tab.status === 'connected'}
-						<button
-							class="pane-ctl"
-							class:on={tab.logging}
-							title={tab.logging ? i18n.t('tabs.stopLog') : i18n.t('tabs.startLog')}
-							onclick={() => toggleLog(tab)}
-						>
-							{tab.logging ? '⏺' : '▤'}
-						</button>
-					{/if}
 					<Terminal
 						onReady={(api) => app.setTabApi(tab.key, api)}
 						onData={(data) => app.sendInput(tab.key, data)}
@@ -194,24 +171,6 @@
 		background: #3a3a3a;
 		color: #ccc;
 		font: 11px system-ui, sans-serif;
-	}
-	.pane-ctl {
-		position: absolute;
-		top: 6px;
-		left: 10px;
-		z-index: 6;
-		padding: 3px 8px;
-		border: 1px solid #555;
-		border-radius: 6px;
-		background: #252526;
-		color: #ddd;
-		font: 12px system-ui, sans-serif;
-		cursor: pointer;
-	}
-	.pane-ctl.on {
-		background: #7a1f1f;
-		border-color: #a33;
-		color: #fff;
 	}
 	.reconnect {
 		margin-top: 8px;
