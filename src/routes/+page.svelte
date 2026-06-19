@@ -1,20 +1,61 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { save } from '@tauri-apps/plugin-dialog';
+	import '$lib/styles/vscode.css';
 	import { app } from '$lib/state.svelte';
 	import { settings } from '$lib/settings.svelte';
+	import { i18n } from '$lib/i18n.svelte';
+	import ActivityBar, { type SidebarView } from '$lib/shell/ActivityBar.svelte';
+	import StatusBar from '$lib/shell/StatusBar.svelte';
 	import SiteSidebar from '$lib/sites/SiteSidebar.svelte';
 	import TerminalTabs from '$lib/session/TerminalTabs.svelte';
 	import SftpPanel from '$lib/sftp/SftpPanel.svelte';
 	import TunnelPanel from '$lib/tunnel/TunnelPanel.svelte';
+	import SettingsDialog from '$lib/SettingsDialog.svelte';
 	import HostKeyDialog from '$lib/HostKeyDialog.svelte';
-	import { i18n } from '$lib/i18n.svelte';
 
-	type RightPanel = 'none' | 'files' | 'tunnels';
-	let rightPanel = $state<RightPanel>('none');
+	let view = $state<SidebarView>('sessions');
+	let collapsed = $state(false);
+	let sidebarWidth = $state(300);
+	let showSettings = $state(false);
 
-	function toggle(panel: RightPanel) {
-		rightPanel = rightPanel === panel ? 'none' : panel;
+	const activeSession = $derived(app.activeTab?.sessionId);
+	const tunnelCount = $derived(app.tunnels.length);
+
+	// Activity-bar click: re-clicking the open view collapses the sidebar;
+	// otherwise switch to that view and make sure the sidebar is showing.
+	function selectView(next: SidebarView) {
+		if (next === view && !collapsed) collapsed = true;
+		else {
+			view = next;
+			collapsed = false;
+		}
+	}
+
+	const viewTitle = $derived(
+		view === 'sessions'
+			? i18n.t('view.sessions')
+			: view === 'files'
+				? i18n.t('view.files')
+				: i18n.t('view.tunnels')
+	);
+
+	// Drag the sidebar's right edge to resize (clamped), VS Code-style.
+	function startResize(e: MouseEvent) {
+		e.preventDefault();
+		const startX = e.clientX;
+		const startW = sidebarWidth;
+		const move = (ev: MouseEvent) => {
+			sidebarWidth = Math.min(640, Math.max(220, startW + (ev.clientX - startX)));
+		};
+		const up = () => {
+			window.removeEventListener('mousemove', move);
+			window.removeEventListener('mouseup', up);
+			document.body.style.cursor = '';
+		};
+		document.body.style.cursor = 'col-resize';
+		window.addEventListener('mousemove', move);
+		window.addEventListener('mouseup', up);
 	}
 
 	// Session logging toggle for the active tab (TM-12).
@@ -36,113 +77,120 @@
 		app.init();
 		settings.load();
 	});
-
-	const activeSession = $derived(app.activeTab?.sessionId);
-	const logging = $derived(app.activeTab?.logging ?? false);
 </script>
 
-<div class="app">
-	<div class="left"><SiteSidebar /></div>
+<div class="workbench">
+	<div class="main">
+		<ActivityBar
+			active={view}
+			{collapsed}
+			{tunnelCount}
+			onselect={selectView}
+			onsettings={() => (showSettings = true)}
+		/>
 
-	<div class="center">
-		<TerminalTabs />
-		<div class="panel-toggles">
-			<button
-				class="panel-toggle"
-				class:active={rightPanel === 'tunnels'}
-				disabled={!activeSession}
-				onclick={() => toggle('tunnels')}
-			>
-				{i18n.t('tunnels.toggle')}
-			</button>
-			<button
-				class="panel-toggle"
-				class:active={rightPanel === 'files'}
-				disabled={!activeSession}
-				onclick={() => toggle('files')}
-			>
-				{i18n.t('common.files')}
-			</button>
-			<button
-				class="panel-toggle log"
-				class:active={logging}
-				disabled={!activeSession}
-				title={logging ? i18n.t('tabs.stopLog') : i18n.t('tabs.startLog')}
-				onclick={toggleLog}
-			>
-				{logging ? '⏺' : '▤'}
-			</button>
-		</div>
+		{#if !collapsed}
+			<div class="sidebar" style="width: {sidebarWidth}px">
+				{#if view === 'sessions'}
+					<SiteSidebar />
+				{:else}
+					<div class="view-head">{viewTitle}</div>
+					{#if activeSession}
+						{#key activeSession}
+							{#if view === 'files'}
+								<SftpPanel sessionId={activeSession} />
+							{:else}
+								<TunnelPanel sessionId={activeSession} />
+							{/if}
+						{/key}
+					{:else}
+						<div class="empty">
+							{view === 'files' ? i18n.t('view.filesEmpty') : i18n.t('view.tunnelsEmpty')}
+						</div>
+					{/if}
+				{/if}
+				<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+				<div
+					class="resizer"
+					role="separator"
+					aria-label="Resize sidebar"
+					tabindex="-1"
+					onmousedown={startResize}
+				></div>
+			</div>
+		{/if}
+
+		<div class="editor"><TerminalTabs /></div>
 	</div>
 
-	{#if rightPanel !== 'none' && activeSession}
-		<div class="right">
-			{#key activeSession}
-				{#if rightPanel === 'files'}
-					<SftpPanel sessionId={activeSession} />
-				{:else if rightPanel === 'tunnels'}
-					<TunnelPanel sessionId={activeSession} />
-				{/if}
-			{/key}
-		</div>
-	{/if}
-
-	<HostKeyDialog />
+	<StatusBar onToggleLog={toggleLog} onShowTunnels={() => selectView('tunnels')} />
 </div>
 
+{#if showSettings}
+	<SettingsDialog onclose={() => (showSettings = false)} />
+{/if}
+<HostKeyDialog />
+
 <style>
-	:global(html, body) {
-		margin: 0;
-		height: 100%;
-	}
-	.app {
+	.workbench {
 		position: fixed;
 		inset: 0;
 		display: flex;
-		background: #1e1e1e;
+		flex-direction: column;
+		background: var(--vsc-editor-bg);
+		color: var(--vsc-editor-fg);
 	}
-	.left {
-		flex: 0 0 250px;
+	.main {
+		display: flex;
+		flex: 1 1 auto;
+		min-height: 0;
+	}
+	.sidebar {
+		position: relative;
+		flex: none;
 		min-width: 0;
+		display: flex;
+		flex-direction: column;
+		background: var(--vsc-sidebar-bg);
+		color: var(--vsc-sidebar-fg);
+		overflow: hidden;
 	}
-	.center {
+	.view-head {
+		flex: none;
+		padding: 10px 18px 6px;
+		font: 11px var(--vsc-font);
+		letter-spacing: 0.6px;
+		text-transform: uppercase;
+		color: var(--vsc-sidebar-title-fg);
+	}
+	.empty {
+		flex: 1;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		padding: 24px;
+		text-align: center;
+		color: var(--vsc-muted);
+		font: 13px var(--vsc-font);
+		line-height: 1.5;
+	}
+	.editor {
 		position: relative;
 		flex: 1 1 auto;
 		min-width: 0;
+		background: var(--vsc-editor-bg);
 	}
-	.right {
-		flex: 0 0 320px;
-		min-width: 0;
-		border-left: 1px solid #333;
-	}
-	.panel-toggles {
+	/* Invisible 4px grab strip on the sidebar's right edge. */
+	.resizer {
 		position: absolute;
-		top: 6px;
-		right: 10px;
-		display: flex;
-		gap: 4px;
-		z-index: 5;
+		top: 0;
+		right: 0;
+		width: 4px;
+		height: 100%;
+		cursor: col-resize;
+		z-index: 6;
 	}
-	.panel-toggle {
-		padding: 4px 10px;
-		border: 1px solid #555;
-		border-radius: 6px;
-		background: #252526;
-		color: #ddd;
-		font: 12px system-ui, sans-serif;
-		cursor: pointer;
-	}
-	.panel-toggle.active {
-		background: #0e639c;
-		border-color: #0e639c;
-		color: #fff;
-	}
-	.panel-toggle.log.active {
-		background: #7a1f1f;
-		border-color: #a33;
-	}
-	.panel-toggle:disabled {
-		opacity: 0.4;
-		cursor: default;
+	.resizer:hover {
+		background: var(--vsc-focus-border);
 	}
 </style>

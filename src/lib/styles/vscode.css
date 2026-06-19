@@ -1,0 +1,97 @@
+/* VS Code "Dark+" design tokens (ST-1/2 theming foundation).
+ *
+ * One source of truth for the shell's palette so the activity bar, sidebar,
+ * editor tabs, status bar, lists, inputs, and buttons all read as one product.
+ * Component-local styles should reference these `--vsc-*` variables rather than
+ * hard-coding hex values. */
+
+:root {
+	/* Window chrome */
+	--vsc-activitybar-bg: #333333;
+	--vsc-activitybar-fg: #ffffff;
+	--vsc-activitybar-inactive: #868686;
+	--vsc-activitybar-active-border: #ffffff;
+	--vsc-activitybar-badge-bg: #007acc;
+
+	--vsc-sidebar-bg: #252526;
+	--vsc-sidebar-fg: #cccccc;
+	--vsc-sidebar-title-fg: #bbbbbb;
+	--vsc-sidebar-section-bg: #252526;
+
+	--vsc-editor-bg: #1e1e1e;
+	--vsc-editor-fg: #d4d4d4;
+
+	/* Editor tabs */
+	--vsc-tab-active-bg: #1e1e1e;
+	--vsc-tab-inactive-bg: #2d2d2d;
+	--vsc-tab-active-fg: #ffffff;
+	--vsc-tab-inactive-fg: #969696;
+	--vsc-tab-border: #252526;
+	--vsc-tab-active-top: #007acc;
+	--vsc-tabbar-bg: #252526;
+
+	/* Status bar */
+	--vsc-statusbar-bg: #007acc;
+	--vsc-statusbar-fg: #ffffff;
+	--vsc-statusbar-hover: #1f8ad2;
+
+	/* Controls */
+	--vsc-focus-border: #007fd4;
+	--vsc-button-bg: #0e639c;
+	--vsc-button-hover: #1177bb;
+	--vsc-button-fg: #ffffff;
+	--vsc-input-bg: #3c3c3c;
+	--vsc-input-fg: #cccccc;
+	--vsc-input-border: #3c3c3c;
+	--vsc-input-placeholder: #a6a6a6;
+
+	/* Lists */
+	--vsc-list-hover-bg: #2a2d2e;
+	--vsc-list-active-bg: #094771;
+	--vsc-list-inactive-bg: #37373d;
+	--vsc-list-fg: #cccccc;
+
+	/* Surfaces */
+	--vsc-border: #2b2b2b;
+	--vsc-panel-border: #3c3c3c;
+	--vsc-widget-bg: #252526;
+	--vsc-widget-border: #454545;
+	--vsc-widget-shadow: rgba(0, 0, 0, 0.36);
+	--vsc-badge-bg: #4d4d4d;
+	--vsc-badge-fg: #ffffff;
+
+	/* Semantic */
+	--vsc-green: #3fb950;
+	--vsc-yellow: #cca700;
+	--vsc-red: #f14c4c;
+	--vsc-muted: #858585;
+
+	--vsc-font: -apple-system, BlinkMacSystemFont, "Segoe UI", "Segoe WPC", system-ui, sans-serif;
+	--vsc-radius: 5px;
+}
+
+:global(html),
+:global(body) {
+	margin: 0;
+	height: 100%;
+	background: var(--vsc-editor-bg);
+	color: var(--vsc-editor-fg);
+	font-family: var(--vsc-font);
+	-webkit-font-smoothing: antialiased;
+}
+
+/* Quiet, VS Code-style scrollbars across the app. */
+:global(*)::-webkit-scrollbar {
+	width: 10px;
+	height: 10px;
+}
+:global(*)::-webkit-scrollbar-thumb {
+	background: rgba(121, 121, 121, 0.4);
+	border-radius: 10px;
+}
+:global(*)::-webkit-scrollbar-thumb:hover {
+	background: rgba(100, 100, 100, 0.7);
+}
+:global(*)::-webkit-scrollbar-corner {
+	background: transparent;
+}
