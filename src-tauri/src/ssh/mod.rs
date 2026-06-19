@@ -1,20 +1,23 @@
 //! SSH connection, authentication, interactive PTY shell, host-key
-//! verification, and the per-session streaming actor.
+//! verification (with an interactive prompt), and the per-session streaming actor.
 //!
 //! Each session runs as an independent async task so one failing session never
 //! affects the others (PRD §6.4). The connection `Handle` is shared (`Arc`) so
 //! additional channels (e.g. SFTP) can be opened on the same connection.
 
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use base64::Engine;
 use russh::client::{self, Handle, KeyboardInteractiveAuthResponse, Msg};
 use russh::keys::ssh_key;
 use russh::ChannelMsg;
+use serde::Serialize;
 use tauri::ipc::Channel;
 use tauri::{AppHandle, Emitter};
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, oneshot};
 
 use crate::error::{AppError, AppResult};
 
@@ -45,8 +48,7 @@ impl ConnectOptions {
     }
 }
 
-/// A credential resolved at connect time (secrets already fetched from the
-/// keychain). TM-2.
+/// A credential resolved at connect time (secrets already fetched). TM-2.
 pub(crate) enum AuthCredential {
     Password(String),
     PublicKey {
@@ -73,16 +75,82 @@ pub(crate) enum SessionCommand {
     Close,
 }
 
-/// Shared slot the handler uses to report a host-key problem back to `connect`,
-/// since `check_server_key` can only signal accept/reject via a bool.
+/// Registry of in-flight host-key prompts, keyed by request id. Managed as
+/// Tauri state so the `host_key_decision` command can resolve a pending prompt.
+#[derive(Clone, Default)]
+pub struct HostKeyPrompts(Arc<Mutex<HashMap<String, oneshot::Sender<bool>>>>);
+
+impl HostKeyPrompts {
+    fn insert(&self, id: String, tx: oneshot::Sender<bool>) {
+        self.0.lock().unwrap().insert(id, tx);
+    }
+    fn remove(&self, id: &str) {
+        self.0.lock().unwrap().remove(id);
+    }
+    /// Resolve a pending prompt with the user's trust decision.
+    pub fn resolve(&self, id: &str, trust: bool) {
+        if let Some(tx) = self.0.lock().unwrap().remove(id) {
+            let _ = tx.send(trust);
+        }
+    }
+}
+
+/// Lets the host-key handler prompt the frontend and await the user's decision.
+pub(crate) struct HostKeyPrompter {
+    pub app: AppHandle,
+    pub prompts: HostKeyPrompts,
+}
+
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct HostKeyPromptPayload {
+    request_id: String,
+    host: String,
+    port: u16,
+    fingerprint: String,
+    changed: bool,
+}
+
+impl HostKeyPrompter {
+    /// Emit a prompt to the frontend and await trust/reject (120s timeout → reject).
+    async fn ask(&self, host: &str, port: u16, fingerprint: &str, changed: bool) -> bool {
+        let request_id = uuid::Uuid::new_v4().to_string();
+        let (tx, rx) = oneshot::channel();
+        self.prompts.insert(request_id.clone(), tx);
+        let _ = self.app.emit(
+            "ssh://host-key-prompt",
+            HostKeyPromptPayload {
+                request_id: request_id.clone(),
+                host: host.to_string(),
+                port,
+                fingerprint: fingerprint.to_string(),
+                changed,
+            },
+        );
+        match tokio::time::timeout(Duration::from_secs(120), rx).await {
+            Ok(Ok(trust)) => trust,
+            _ => {
+                self.prompts.remove(&request_id);
+                false
+            }
+        }
+    }
+}
+
+/// Shared slot the handler uses to report a host-key problem back to `open_shell`.
 #[derive(Clone, Default)]
 struct HostKeyReport(Arc<Mutex<Option<String>>>);
 
-/// russh client event handler with `known_hosts` verification (TM-6).
+/// russh client event handler with interactive `known_hosts` verification (TM-6).
+///
+/// With a `prompter` (normal app use) the user confirms unknown/changed keys;
+/// without one (headless/tests) it falls back to trust-on-first-use and refuses
+/// changed keys.
 pub(crate) struct ClientHandler {
     host: String,
     port: u16,
     known_hosts: PathBuf,
+    prompter: Option<HostKeyPrompter>,
     report: HostKeyReport,
 }
 
@@ -93,49 +161,104 @@ impl client::Handler for ClientHandler {
         &mut self,
         server_public_key: &ssh_key::PublicKey,
     ) -> Result<bool, Self::Error> {
+        let fingerprint = server_public_key
+            .fingerprint(ssh_key::HashAlg::Sha256)
+            .to_string();
+
         match russh::keys::check_known_hosts_path(
             &self.host,
             self.port,
             server_public_key,
             &self.known_hosts,
         ) {
+            // Known host, key matches.
             Ok(true) => Ok(true),
-            // Unknown host: trust on first use and record it.
-            // TODO(M1, TM-6): prompt the user with the fingerprint before trusting.
+            // Unknown host: ask the user (or trust-on-first-use when headless).
             Ok(false) => {
-                let _ = russh::keys::known_hosts::learn_known_hosts_path(
-                    &self.host,
-                    self.port,
-                    server_public_key,
-                    &self.known_hosts,
-                );
-                Ok(true)
-            }
-            // Key changed or other verification error: refuse (fail closed).
-            Err(e) => {
-                let fp = server_public_key.fingerprint(ssh_key::HashAlg::Sha256);
-                let msg = match &e {
-                    russh::keys::Error::KeyChanged { line } => format!(
-                        "Host key for {}:{} CHANGED (known_hosts line {line}). \
-                         New key fingerprint {fp}. Possible man-in-the-middle — refusing to connect.",
-                        self.host, self.port
-                    ),
-                    other => format!(
-                        "Host key verification failed for {}:{}: {other}",
-                        self.host, self.port
-                    ),
+                let trust = match &self.prompter {
+                    Some(p) => p.ask(&self.host, self.port, &fingerprint, false).await,
+                    None => true,
                 };
-                *self.report.0.lock().unwrap() = Some(msg);
+                if trust {
+                    let _ = russh::keys::known_hosts::learn_known_hosts_path(
+                        &self.host,
+                        self.port,
+                        server_public_key,
+                        &self.known_hosts,
+                    );
+                    Ok(true)
+                } else {
+                    *self.report.0.lock().unwrap() = Some(format!(
+                        "Host key for {}:{} was not trusted (fingerprint {fingerprint}).",
+                        self.host, self.port
+                    ));
+                    Ok(false)
+                }
+            }
+            // Key changed: ask the user, defaulting to reject; never auto-accept headless.
+            Err(russh::keys::Error::KeyChanged { line }) => {
+                let trust = match &self.prompter {
+                    Some(p) => p.ask(&self.host, self.port, &fingerprint, true).await,
+                    None => false,
+                };
+                if trust {
+                    let _ = forget_host(&self.known_hosts, &self.host, self.port);
+                    let _ = russh::keys::known_hosts::learn_known_hosts_path(
+                        &self.host,
+                        self.port,
+                        server_public_key,
+                        &self.known_hosts,
+                    );
+                    Ok(true)
+                } else {
+                    *self.report.0.lock().unwrap() = Some(format!(
+                        "Host key for {}:{} CHANGED (known_hosts line {line}); new fingerprint \
+                         {fingerprint}. Rejected — possible man-in-the-middle.",
+                        self.host, self.port
+                    ));
+                    Ok(false)
+                }
+            }
+            Err(e) => {
+                *self.report.0.lock().unwrap() = Some(format!(
+                    "Host key verification failed for {}:{}: {e}",
+                    self.host, self.port
+                ));
                 Ok(false)
             }
         }
     }
 }
 
+/// Rewrite `known_hosts`, dropping entries for `host[:port]`. Entries written by
+/// `learn_known_hosts_path` use plain (un-hashed) host fields, so a plain match
+/// is sufficient for keys this app recorded.
+fn forget_host(path: &PathBuf, host: &str, port: u16) -> std::io::Result<()> {
+    let content = match std::fs::read_to_string(path) {
+        Ok(c) => c,
+        Err(_) => return Ok(()),
+    };
+    let plain = host.to_string();
+    let with_port = format!("[{host}]:{port}");
+    let kept: Vec<&str> = content
+        .lines()
+        .filter(|line| {
+            let first = line.split_whitespace().next().unwrap_or("");
+            !first.split(',').any(|h| h == plain || h == with_port)
+        })
+        .collect();
+    let mut out = kept.join("\n");
+    if !out.is_empty() {
+        out.push('\n');
+    }
+    std::fs::write(path, out)
+}
+
 /// Connect, verify the host key, authenticate, and open an interactive shell.
 pub(crate) async fn open_shell(
     req: &ConnectRequest,
     known_hosts: PathBuf,
+    prompter: Option<HostKeyPrompter>,
 ) -> AppResult<(SshHandle, russh::Channel<Msg>)> {
     let config = Arc::new(client::Config::default());
     let report = HostKeyReport::default();
@@ -143,6 +266,7 @@ pub(crate) async fn open_shell(
         host: req.host.clone(),
         port: req.port,
         known_hosts,
+        prompter,
         report: report.clone(),
     };
 
@@ -207,8 +331,6 @@ async fn authenticate(handle: &mut SshHandle, req: &ConnectRequest) -> AppResult
                             "keyboard-interactive authentication failed".into(),
                         ));
                     }
-                    // Answer every prompt with the stored secret (typical: one
-                    // password prompt). Full per-prompt UI is a future addition.
                     KeyboardInteractiveAuthResponse::InfoRequest { prompts, .. } => {
                         let answers = prompts.iter().map(|_| secret.clone()).collect();
                         response = handle
@@ -224,7 +346,6 @@ async fn authenticate(handle: &mut SshHandle, req: &ConnectRequest) -> AppResult
 
 /// Per-session actor: forwards user input/resize to the SSH shell channel and
 /// streams shell output back to the frontend (base64 over a Tauri `Channel`).
-/// The connection stays alive via the `Arc<SshHandle>` held by `SessionManager`.
 /// Emits `ssh://closed` with the session id when the shell ends (SM-2, §6.4).
 pub(crate) async fn run_session(
     mut channel: russh::Channel<Msg>,
@@ -304,8 +425,8 @@ mod tests {
         let known_hosts = std::env::temp_dir().join("ammax_test_known_hosts");
         let _ = std::fs::remove_file(&known_hosts);
 
-        // 1) Connect, verify host key (TOFU learns it), open an interactive shell.
-        let (handle, mut channel) = open_shell(&test_request(), known_hosts.clone())
+        // 1) Connect (TOFU learns the key — no prompter in tests) + open a shell.
+        let (handle, mut channel) = open_shell(&test_request(), known_hosts.clone(), None)
             .await
             .expect("open_shell should succeed against the Docker SSH server");
 
@@ -356,7 +477,7 @@ mod tests {
         );
 
         // 4) Reconnect: the learned key must verify (match path, no re-learn).
-        let (handle2, _ch2) = open_shell(&test_request(), known_hosts.clone())
+        let (handle2, _ch2) = open_shell(&test_request(), known_hosts.clone(), None)
             .await
             .expect("reconnect should pass host-key verification");
         let kh = std::fs::read_to_string(&known_hosts).unwrap();

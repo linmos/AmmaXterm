@@ -11,7 +11,7 @@ use tauri::AppHandle;
 use tokio::sync::mpsc;
 
 use crate::error::{AppError, AppResult};
-use crate::ssh::{self, ConnectRequest, SessionCommand, SshHandle};
+use crate::ssh::{self, ConnectRequest, HostKeyPrompter, HostKeyPrompts, SessionCommand, SshHandle};
 
 /// One active session: the shell command channel plus the shared SSH handle
 /// (used to open SFTP channels on the same connection).
@@ -37,11 +37,16 @@ impl SessionManager {
     pub async fn connect(
         &self,
         app: AppHandle,
+        prompts: HostKeyPrompts,
         req: ConnectRequest,
         known_hosts: PathBuf,
         output: Channel<String>,
     ) -> AppResult<String> {
-        let (handle, channel) = ssh::open_shell(&req, known_hosts).await?;
+        let prompter = HostKeyPrompter {
+            app: app.clone(),
+            prompts,
+        };
+        let (handle, channel) = ssh::open_shell(&req, known_hosts, Some(prompter)).await?;
         let id = format!("session-{}", self.counter.fetch_add(1, Ordering::Relaxed));
         let (tx, rx) = mpsc::channel(64);
         tauri::async_runtime::spawn(ssh::run_session(channel, rx, output, app, id.clone()));

@@ -4,6 +4,7 @@
 	import SiteSidebar from '$lib/sites/SiteSidebar.svelte';
 	import TerminalTabs from '$lib/session/TerminalTabs.svelte';
 	import SftpPanel from '$lib/sftp/SftpPanel.svelte';
+	import HostKeyDialog from '$lib/HostKeyDialog.svelte';
 
 	let showFiles = $state(false);
 
@@ -36,6 +37,8 @@
 			{/key}
 		</div>
 	{/if}
+
+	<HostKeyDialog />
 </div>
 
 <style>

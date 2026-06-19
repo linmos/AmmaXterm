@@ -16,6 +16,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .manage(SessionManager::new())
+        .manage(ssh::HostKeyPrompts::default())
         .setup(|app| {
             // Sites live in sites.json under the app config dir.
             let config_dir = app.path().app_config_dir()?;
@@ -28,6 +29,7 @@ pub fn run() {
             commands::ssh_send_input,
             commands::ssh_resize,
             commands::ssh_disconnect,
+            commands::host_key_decision,
             commands::sftp_list,
             commands::sftp_upload,
             commands::sftp_download,

@@ -20,6 +20,14 @@ export interface Tab {
 	size: TerminalSize;
 }
 
+export interface HostKeyPrompt {
+	requestId: string;
+	host: string;
+	port: number;
+	fingerprint: string;
+	changed: boolean;
+}
+
 function b64ToBytes(b64: string): Uint8Array {
 	const bin = atob(b64);
 	const bytes = new Uint8Array(bin.length);
@@ -36,6 +44,7 @@ class AppState {
 	sites = $state<Site[]>([]);
 	tabs = $state<Tab[]>([]);
 	activeKey = $state<string | null>(null);
+	hostKeyPrompt = $state<HostKeyPrompt | null>(null);
 
 	get activeTab(): Tab | undefined {
 		return this.tabs.find((t) => t.key === this.activeKey);
@@ -47,6 +56,17 @@ class AppState {
 			const tab = this.tabs.find((t) => t.sessionId === event.payload);
 			if (tab && tab.status === 'connected') tab.status = 'closed';
 		});
+		await listen<HostKeyPrompt>('ssh://host-key-prompt', (event) => {
+			this.hostKeyPrompt = event.payload;
+		});
+	}
+
+	respondHostKey(trust: boolean) {
+		const prompt = this.hostKeyPrompt;
+		this.hostKeyPrompt = null;
+		if (prompt) {
+			invoke('host_key_decision', { requestId: prompt.requestId, trust }).catch(() => {});
+		}
 	}
 
 	// --- sites ---

@@ -9,7 +9,7 @@ use crate::error::{AppError, AppResult};
 use crate::secrets::{self, SecretKind};
 use crate::session::SessionManager;
 use crate::sftp::FileEntry;
-use crate::ssh::{AuthCredential, ConnectOptions, ConnectRequest};
+use crate::ssh::{AuthCredential, ConnectOptions, ConnectRequest, HostKeyPrompts};
 use crate::store::{AuthMethod, Site, SiteInput, SiteStore};
 
 /// Resolve (and ensure) the app config directory.
@@ -31,10 +31,12 @@ pub async fn ssh_connect(
     options: ConnectOptions,
     on_output: Channel<String>,
     manager: State<'_, SessionManager>,
+    prompts: State<'_, HostKeyPrompts>,
 ) -> AppResult<String> {
     let known_hosts = config_dir(&app)?.join("known_hosts");
+    let prompts = prompts.inner().clone();
     manager
-        .connect(app, options.into_request(), known_hosts, on_output)
+        .connect(app, prompts, options.into_request(), known_hosts, on_output)
         .await
 }
 
@@ -48,6 +50,7 @@ pub async fn site_connect(
     on_output: Channel<String>,
     store: State<'_, SiteStore>,
     manager: State<'_, SessionManager>,
+    prompts: State<'_, HostKeyPrompts>,
 ) -> AppResult<String> {
     let site = store.get(&site_id)?;
     let known_hosts = config_dir(&app)?.join("known_hosts");
@@ -78,7 +81,9 @@ pub async fn site_connect(
         cols,
         rows,
     };
-    manager.connect(app, req, known_hosts, on_output).await
+    manager
+        .connect(app, prompts.inner().clone(), req, known_hosts, on_output)
+        .await
 }
 
 /// Send user input (keystrokes / paste) to a session's shell.
@@ -106,6 +111,12 @@ pub async fn ssh_resize(
 #[tauri::command]
 pub async fn ssh_disconnect(id: String, manager: State<'_, SessionManager>) -> AppResult<()> {
     manager.disconnect(&id).await
+}
+
+/// Resolve a pending host-key prompt with the user's trust decision (TM-6).
+#[tauri::command]
+pub fn host_key_decision(request_id: String, trust: bool, prompts: State<'_, HostKeyPrompts>) {
+    prompts.resolve(&request_id, trust);
 }
 
 // --- SFTP ---
