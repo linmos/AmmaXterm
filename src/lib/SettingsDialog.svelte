@@ -101,47 +101,59 @@
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		background: rgba(0, 0, 0, 0.6);
+		background: rgba(0, 0, 0, 0.55);
 		z-index: 10;
 	}
 	.dialog {
 		display: flex;
 		flex-direction: column;
-		gap: 10px;
-		width: 380px;
-		padding: 22px;
-		background: #252526;
-		border: 1px solid #333;
-		border-radius: 10px;
-		color: #eee;
-		font: 14px system-ui, sans-serif;
+		gap: 12px;
+		width: 400px;
+		max-width: 92vw;
+		max-height: 86vh;
+		box-sizing: border-box;
+		padding: 20px 22px;
+		background: var(--vsc-widget-bg);
+		border: 1px solid var(--vsc-widget-border);
+		border-radius: 6px;
+		color: var(--vsc-editor-fg);
+		font: 13px var(--vsc-font);
+		box-shadow: 0 8px 32px rgba(0, 0, 0, 0.44);
+		overflow: auto;
 	}
 	h2 {
 		margin: 0;
-		font-size: 18px;
+		font-size: 17px;
+		font-weight: 600;
 	}
 	h3 {
-		margin: 6px 0 0;
-		font-size: 12px;
+		margin: 8px 0 0;
+		font-size: 11px;
 		text-transform: uppercase;
-		letter-spacing: 0.4px;
-		opacity: 0.6;
+		letter-spacing: 0.5px;
+		color: var(--vsc-muted);
 	}
 	label {
 		display: flex;
 		flex-direction: column;
-		gap: 4px;
+		gap: 5px;
 		font-size: 12px;
-		opacity: 0.9;
+		color: var(--vsc-sidebar-fg);
 	}
 	input,
 	select {
-		padding: 8px 10px;
-		border: 1px solid #3c3c3c;
-		border-radius: 6px;
-		background: #1e1e1e;
-		color: #eee;
-		font: 14px system-ui, sans-serif;
+		padding: 7px 9px;
+		border: 1px solid var(--vsc-input-border);
+		border-radius: 4px;
+		background: var(--vsc-input-bg);
+		color: var(--vsc-input-fg);
+		font: 13px var(--vsc-font);
+	}
+	input:focus,
+	select:focus {
+		outline: 1px solid var(--vsc-focus-border);
+		outline-offset: -1px;
+		border-color: var(--vsc-focus-border);
 	}
 	.row {
 		display: flex;
@@ -159,7 +171,7 @@
 		flex: 1;
 	}
 	.hint {
-		opacity: 0.6;
+		color: var(--vsc-muted);
 	}
 	.actions {
 		display: flex;
@@ -168,25 +180,31 @@
 		margin-top: 6px;
 	}
 	button {
-		padding: 8px 14px;
+		padding: 7px 14px;
 		border: none;
-		border-radius: 6px;
-		background: #0e639c;
-		color: #fff;
-		font: 14px system-ui, sans-serif;
+		border-radius: 3px;
+		background: var(--vsc-button-bg);
+		color: var(--vsc-button-fg);
+		font: 13px var(--vsc-font);
 		cursor: pointer;
 	}
+	button:hover {
+		background: var(--vsc-button-hover);
+	}
 	button:disabled {
-		opacity: 0.6;
+		opacity: 0.5;
+		cursor: default;
 	}
 	.ghost {
-		background: transparent;
-		border: 1px solid #555;
-		color: #ddd;
+		background: var(--vsc-button-secondary-bg);
+		color: var(--vsc-button-secondary-fg);
+	}
+	.ghost:hover {
+		background: var(--vsc-button-secondary-hover);
 	}
 	.error {
 		margin: 0;
-		color: #f48771;
+		color: var(--vsc-red);
 		font-size: 13px;
 	}
 </style>

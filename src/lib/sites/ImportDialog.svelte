@@ -91,30 +91,34 @@
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		background: rgba(0, 0, 0, 0.6);
+		background: rgba(0, 0, 0, 0.55);
 		z-index: 10;
 	}
 	.dialog {
 		display: flex;
 		flex-direction: column;
-		gap: 10px;
-		width: 420px;
-		max-height: 80vh;
-		padding: 22px;
-		background: #252526;
-		border: 1px solid #333;
-		border-radius: 10px;
-		color: #eee;
-		font: 14px system-ui, sans-serif;
+		gap: 12px;
+		width: 440px;
+		max-width: 92vw;
+		max-height: 86vh;
+		box-sizing: border-box;
+		padding: 20px 22px;
+		background: var(--vsc-widget-bg);
+		border: 1px solid var(--vsc-widget-border);
+		border-radius: 6px;
+		color: var(--vsc-editor-fg);
+		font: 13px var(--vsc-font);
+		box-shadow: 0 8px 32px rgba(0, 0, 0, 0.44);
 	}
 	h2 {
 		margin: 0;
-		font-size: 18px;
+		font-size: 17px;
+		font-weight: 600;
 	}
 	.src {
 		margin: 0;
 		font-size: 12px;
-		opacity: 0.7;
+		color: var(--vsc-muted);
 	}
 	.src code {
 		font-size: 11px;
@@ -124,9 +128,9 @@
 		align-items: center;
 		gap: 6px;
 		font-size: 12px;
-		opacity: 0.85;
-		padding-bottom: 4px;
-		border-bottom: 1px solid #333;
+		color: var(--vsc-sidebar-fg);
+		padding-bottom: 6px;
+		border-bottom: 1px solid var(--vsc-panel-border);
 	}
 	.list {
 		flex: 1;
@@ -140,11 +144,12 @@
 		display: flex;
 		align-items: center;
 		gap: 8px;
-		padding: 5px 4px;
+		padding: 5px 6px;
+		border-radius: 4px;
 		cursor: pointer;
 	}
 	.list li:hover {
-		background: #2a2a2a;
+		background: var(--vsc-list-hover-bg);
 	}
 	.list .name {
 		font-weight: 600;
@@ -153,16 +158,16 @@
 		flex: 1;
 		min-width: 0;
 		font-size: 11px;
-		opacity: 0.6;
+		color: var(--vsc-muted);
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
 	}
 	.badge {
-		padding: 0 6px;
+		padding: 1px 7px;
 		border-radius: 8px;
-		background: #5a4a1a;
-		color: #e8c97a;
+		background: rgba(204, 167, 0, 0.18);
+		color: var(--vsc-yellow);
 		font-size: 10px;
 		line-height: 16px;
 	}
@@ -176,25 +181,31 @@
 		margin-top: 6px;
 	}
 	button {
-		padding: 8px 14px;
+		padding: 7px 14px;
 		border: none;
-		border-radius: 6px;
-		background: #0e639c;
-		color: #fff;
-		font: 14px system-ui, sans-serif;
+		border-radius: 3px;
+		background: var(--vsc-button-bg);
+		color: var(--vsc-button-fg);
+		font: 13px var(--vsc-font);
 		cursor: pointer;
+	}
+	button:hover {
+		background: var(--vsc-button-hover);
 	}
 	button:disabled {
 		opacity: 0.5;
+		cursor: default;
 	}
 	.ghost {
-		background: transparent;
-		border: 1px solid #555;
-		color: #ddd;
+		background: var(--vsc-button-secondary-bg);
+		color: var(--vsc-button-secondary-fg);
+	}
+	.ghost:hover {
+		background: var(--vsc-button-secondary-hover);
 	}
 	.error {
 		margin: 0;
-		color: #f48771;
+		color: var(--vsc-red);
 		font-size: 13px;
 	}
 </style>

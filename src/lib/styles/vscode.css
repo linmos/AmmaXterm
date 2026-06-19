@@ -40,6 +40,9 @@
 	--vsc-button-bg: #0e639c;
 	--vsc-button-hover: #1177bb;
 	--vsc-button-fg: #ffffff;
+	--vsc-button-secondary-bg: #313438;
+	--vsc-button-secondary-hover: #45494e;
+	--vsc-button-secondary-fg: #cccccc;
 	--vsc-input-bg: #3c3c3c;
 	--vsc-input-fg: #cccccc;
 	--vsc-input-border: #3c3c3c;
