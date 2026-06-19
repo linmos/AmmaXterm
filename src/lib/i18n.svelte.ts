@@ -1,14 +1,18 @@
 // Lightweight, dependency-free i18n (§6.5). Strings are externalized here;
 // the active locale is a rune so `i18n.t(...)` in a template reacts to changes.
 // Full coverage / more locales is ST-4 (M3).
+//
+// Note: saved connections are labelled "Session" (MobaXterm terminology). The
+// internal code keeps the name `Site` to avoid clashing with an *active* SSH
+// session (SessionManager / sessionId / tabs).
 
 type Messages = Record<string, string>;
 
 const en: Messages = {
 	'sidebar.quickConnect': 'Quick connect',
-	'sidebar.newSite': 'New site',
-	'sidebar.search': 'Search sites…',
-	'sidebar.empty': 'No sites yet — click ＋ to add one.',
+	'sidebar.newSite': 'New session',
+	'sidebar.search': 'Search sessions…',
+	'sidebar.empty': 'No sessions yet — click ＋ to add one.',
 	'common.connect': 'Connect',
 	'common.connecting': 'Connecting…',
 	'common.cancel': 'Cancel',
@@ -23,8 +27,8 @@ const en: Messages = {
 	'common.sure': 'Sure?',
 	'common.files': 'Files',
 	'common.disconnect': 'Disconnect',
-	'site.new': 'New site',
-	'site.edit': 'Edit site',
+	'site.new': 'New session',
+	'site.edit': 'Edit session',
 	'site.name': 'Name',
 	'site.auth': 'Auth',
 	'auth.password': 'Password',
@@ -35,7 +39,7 @@ const en: Messages = {
 	'site.passphrase': 'Key passphrase',
 	'site.blankKeep': '(blank = keep)',
 	'tabs.empty': 'No active sessions.',
-	'tabs.emptyHint': 'Connect to a site or use Quick Connect (⚡).',
+	'tabs.emptyHint': 'Open a session or use Quick Connect (⚡).',
 	'tabs.failed': 'Connection failed:',
 	'tabs.closed': 'session closed',
 	'sftp.up': 'Up one level',
@@ -60,9 +64,9 @@ const en: Messages = {
 
 const zhTW: Messages = {
 	'sidebar.quickConnect': '快速連線',
-	'sidebar.newSite': '新增站台',
-	'sidebar.search': '搜尋站台…',
-	'sidebar.empty': '尚無站台 — 點 ＋ 新增。',
+	'sidebar.newSite': '新增工作階段',
+	'sidebar.search': '搜尋工作階段…',
+	'sidebar.empty': '尚無工作階段 — 點 ＋ 新增。',
 	'common.connect': '連線',
 	'common.connecting': '連線中…',
 	'common.cancel': '取消',
@@ -77,8 +81,8 @@ const zhTW: Messages = {
 	'common.sure': '確定？',
 	'common.files': '檔案',
 	'common.disconnect': '中斷連線',
-	'site.new': '新增站台',
-	'site.edit': '編輯站台',
+	'site.new': '新增工作階段',
+	'site.edit': '編輯工作階段',
 	'site.name': '名稱',
 	'site.auth': '認證',
 	'auth.password': '密碼',
@@ -89,7 +93,7 @@ const zhTW: Messages = {
 	'site.passphrase': '金鑰密語',
 	'site.blankKeep': '（留空則不變）',
 	'tabs.empty': '沒有作用中的連線。',
-	'tabs.emptyHint': '從站台連線，或使用快速連線（⚡）。',
+	'tabs.emptyHint': '開啟工作階段，或使用快速連線（⚡）。',
 	'tabs.failed': '連線失敗：',
 	'tabs.closed': '連線已關閉',
 	'sftp.up': '上一層',
