@@ -369,6 +369,33 @@ pub fn tunnel_list(tunnels: State<'_, TunnelManager>) -> Vec<TunnelInfo> {
     tunnels.list()
 }
 
+// --- Key generation (AK-3) ---
+
+/// Generate an Ed25519 or RSA keypair (CPU-bound → run on a blocking thread).
+#[tauri::command]
+pub async fn keygen_generate(
+    algorithm: String,
+    comment: String,
+) -> AppResult<crate::keygen::GeneratedKey> {
+    tokio::task::spawn_blocking(move || crate::keygen::generate(&algorithm, &comment))
+        .await
+        .map_err(|e| AppError::Other(format!("keygen task failed: {e}")))?
+}
+
+/// Write a generated private + public key pair to disk (private key 0600 on unix).
+#[tauri::command]
+pub fn keygen_save(private_path: String, private_key: String, public_key: String) -> AppResult<()> {
+    let priv_path = std::path::PathBuf::from(&private_path);
+    fs::write(&priv_path, private_key.as_bytes())?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = fs::set_permissions(&priv_path, std::fs::Permissions::from_mode(0o600));
+    }
+    fs::write(format!("{private_path}.pub"), public_key.as_bytes())?;
+    Ok(())
+}
+
 // --- Local file browser (FT-10 dual-pane) ---
 
 #[derive(serde::Serialize)]

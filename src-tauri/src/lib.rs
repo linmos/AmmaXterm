@@ -1,6 +1,7 @@
 mod commands;
 mod error;
 mod importer;
+mod keygen;
 mod secrets;
 mod session;
 mod settings;
@@ -70,6 +71,8 @@ pub fn run() {
             commands::transfer_retry,
             commands::transfer_clear,
             commands::local_list,
+            commands::keygen_generate,
+            commands::keygen_save,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

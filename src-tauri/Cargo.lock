@@ -74,11 +74,13 @@ name = "ammaxterm"
 version = "0.1.0"
 dependencies = [
  "base64 0.22.1",
+ "getrandom 0.3.4",
  "keyring",
  "russh",
  "russh-sftp",
  "serde",
  "serde_json",
+ "ssh-key",
  "tauri",
  "tauri-build",
  "tauri-plugin-dialog",

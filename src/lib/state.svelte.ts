@@ -26,6 +26,13 @@ export interface Tab {
 	logging: boolean;
 }
 
+/** A generated keypair returned by `keygen_generate` (AK-3). */
+export interface GeneratedKey {
+	publicKey: string;
+	privateKey: string;
+	fingerprint: string;
+}
+
 export interface HostKeyPrompt {
 	requestId: string;
 	host: string;
@@ -189,6 +196,16 @@ class AppState {
 			await invoke<Site>('site_add', { input });
 		}
 		await this.loadSites();
+	}
+
+	// --- key generation (AK-3) ---
+
+	async generateKey(algorithm: string, comment: string): Promise<GeneratedKey> {
+		return invoke<GeneratedKey>('keygen_generate', { algorithm, comment });
+	}
+
+	async saveKey(privatePath: string, privateKey: string, publicKey: string): Promise<void> {
+		await invoke('keygen_save', { privatePath, privateKey, publicKey });
 	}
 
 	/** Move a site into a group (or out of all groups when `group` is null).
