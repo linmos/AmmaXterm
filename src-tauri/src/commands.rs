@@ -9,7 +9,7 @@ use crate::error::{AppError, AppResult};
 use crate::secrets::{self, SecretKind};
 use crate::session::SessionManager;
 use crate::sftp::FileEntry;
-use crate::ssh::ConnectOptions;
+use crate::ssh::{AuthCredential, ConnectOptions, ConnectRequest};
 use crate::store::{AuthMethod, Site, SiteInput, SiteStore};
 
 /// Resolve (and ensure) the app config directory.
@@ -24,8 +24,7 @@ fn config_dir(app: &AppHandle) -> AppResult<std::path::PathBuf> {
 
 // --- SSH sessions ---
 
-/// Open an SSH session from ad-hoc options (Quick Connect). `on_output` is a
-/// Tauri channel the backend streams base64-encoded shell output through.
+/// Open an SSH session from ad-hoc options (Quick Connect, password auth).
 #[tauri::command]
 pub async fn ssh_connect(
     app: AppHandle,
@@ -34,7 +33,9 @@ pub async fn ssh_connect(
     manager: State<'_, SessionManager>,
 ) -> AppResult<String> {
     let known_hosts = config_dir(&app)?.join("known_hosts");
-    manager.connect(options, known_hosts, on_output).await
+    manager
+        .connect(app, options.into_request(), known_hosts, on_output)
+        .await
 }
 
 /// Open an SSH session from a saved site, resolving its secret from the keychain.
@@ -51,26 +52,33 @@ pub async fn site_connect(
     let site = store.get(&site_id)?;
     let known_hosts = config_dir(&app)?.join("known_hosts");
 
-    let password = match site.auth {
-        AuthMethod::Password => secrets::get(SecretKind::Password, &site_id)?
-            .ok_or_else(|| AppError::Auth("no saved password for this site".into()))?,
-        // Public-key and keyboard-interactive land in M1 task 14 (TM-2).
-        _ => {
-            return Err(AppError::Other(
-                "this authentication method is not implemented yet".into(),
-            ))
+    let auth = match site.auth {
+        AuthMethod::Password => AuthCredential::Password(
+            secrets::get(SecretKind::Password, &site_id)?
+                .ok_or_else(|| AppError::Auth("no saved password for this site".into()))?,
+        ),
+        AuthMethod::PublicKey { key_path } => AuthCredential::PublicKey {
+            key_path,
+            passphrase: secrets::get(SecretKind::Passphrase, &site_id)?,
+        },
+        AuthMethod::KeyboardInteractive => AuthCredential::KeyboardInteractive(
+            secrets::get(SecretKind::Password, &site_id)?
+                .ok_or_else(|| AppError::Auth("no saved secret for this site".into()))?,
+        ),
+        AuthMethod::Agent => {
+            return Err(AppError::Other("SSH agent auth is not supported yet".into()))
         }
     };
 
-    let options = ConnectOptions {
+    let req = ConnectRequest {
         host: site.host,
         port: site.port,
         username: site.username,
-        password,
+        auth,
         cols,
         rows,
     };
-    manager.connect(options, known_hosts, on_output).await
+    manager.connect(app, req, known_hosts, on_output).await
 }
 
 /// Send user input (keystrokes / paste) to a session's shell.

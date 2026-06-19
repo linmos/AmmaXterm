@@ -1,5 +1,5 @@
-//! SSH connection, interactive PTY shell, host-key verification, and the
-//! per-session streaming actor.
+//! SSH connection, authentication, interactive PTY shell, host-key
+//! verification, and the per-session streaming actor.
 //!
 //! Each session runs as an independent async task so one failing session never
 //! affects the others (PRD §6.4). The connection `Handle` is shared (`Arc`) so
@@ -9,10 +9,11 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use base64::Engine;
-use russh::client::{self, Handle, Msg};
+use russh::client::{self, Handle, KeyboardInteractiveAuthResponse, Msg};
 use russh::keys::ssh_key;
 use russh::ChannelMsg;
 use tauri::ipc::Channel;
+use tauri::{AppHandle, Emitter};
 use tokio::sync::mpsc;
 
 use crate::error::{AppError, AppResult};
@@ -20,14 +21,47 @@ use crate::error::{AppError, AppResult};
 /// Shared SSH connection handle; used to open the shell and SFTP channels.
 pub(crate) type SshHandle = Handle<ClientHandler>;
 
-/// Options needed to open an SSH session. (M0: password auth only; public-key
-/// and keyboard-interactive arrive with credential management in M1, TM-2.)
+/// Quick-connect options coming straight from the frontend (password auth).
 #[derive(Debug, Clone, serde::Deserialize)]
 pub(crate) struct ConnectOptions {
     pub host: String,
     pub port: u16,
     pub username: String,
     pub password: String,
+    pub cols: u32,
+    pub rows: u32,
+}
+
+impl ConnectOptions {
+    pub fn into_request(self) -> ConnectRequest {
+        ConnectRequest {
+            host: self.host,
+            port: self.port,
+            username: self.username,
+            auth: AuthCredential::Password(self.password),
+            cols: self.cols,
+            rows: self.rows,
+        }
+    }
+}
+
+/// A credential resolved at connect time (secrets already fetched from the
+/// keychain). TM-2.
+pub(crate) enum AuthCredential {
+    Password(String),
+    PublicKey {
+        key_path: String,
+        passphrase: Option<String>,
+    },
+    KeyboardInteractive(String),
+}
+
+/// A fully-resolved connection request.
+pub(crate) struct ConnectRequest {
+    pub host: String,
+    pub port: u16,
+    pub username: String,
+    pub auth: AuthCredential,
     pub cols: u32,
     pub rows: u32,
 }
@@ -65,7 +99,6 @@ impl client::Handler for ClientHandler {
             server_public_key,
             &self.known_hosts,
         ) {
-            // Known host, key matches.
             Ok(true) => Ok(true),
             // Unknown host: trust on first use and record it.
             // TODO(M1, TM-6): prompt the user with the fingerprint before trusting.
@@ -99,36 +132,23 @@ impl client::Handler for ClientHandler {
     }
 }
 
-/// Connect, verify the host key, authenticate, open an interactive shell, and
-/// spawn the session actor. Returns the command sender and the shared handle.
-pub(crate) async fn connect(
-    opts: &ConnectOptions,
-    known_hosts: PathBuf,
-    output: Channel<String>,
-) -> AppResult<(mpsc::Sender<SessionCommand>, Arc<SshHandle>)> {
-    let (handle, channel) = open_shell(opts, known_hosts).await?;
-    let (tx, rx) = mpsc::channel(64);
-    tauri::async_runtime::spawn(run_session(channel, rx, output));
-    Ok((tx, Arc::new(handle)))
-}
-
-async fn open_shell(
-    opts: &ConnectOptions,
+/// Connect, verify the host key, authenticate, and open an interactive shell.
+pub(crate) async fn open_shell(
+    req: &ConnectRequest,
     known_hosts: PathBuf,
 ) -> AppResult<(SshHandle, russh::Channel<Msg>)> {
     let config = Arc::new(client::Config::default());
     let report = HostKeyReport::default();
     let handler = ClientHandler {
-        host: opts.host.clone(),
-        port: opts.port,
+        host: req.host.clone(),
+        port: req.port,
         known_hosts,
         report: report.clone(),
     };
 
-    let mut handle = match client::connect(config, (opts.host.as_str(), opts.port), handler).await {
+    let mut handle = match client::connect(config, (req.host.as_str(), req.port), handler).await {
         Ok(h) => h,
         Err(e) => {
-            // Prefer the specific host-key message if the handshake failed on it.
             if let Some(msg) = report.0.lock().unwrap().take() {
                 return Err(AppError::HostKey(msg));
             }
@@ -136,29 +156,82 @@ async fn open_shell(
         }
     };
 
-    let auth = handle
-        .authenticate_password(opts.username.clone(), opts.password.clone())
-        .await?;
-    if !auth.success() {
-        return Err(AppError::Auth("password authentication failed".into()));
-    }
+    authenticate(&mut handle, req).await?;
 
     let channel = handle.channel_open_session().await?;
     channel
-        .request_pty(false, "xterm-256color", opts.cols, opts.rows, 0, 0, &[])
+        .request_pty(false, "xterm-256color", req.cols, req.rows, 0, 0, &[])
         .await?;
     channel.request_shell(true).await?;
 
     Ok((handle, channel))
 }
 
+/// Authenticate using the requested method (TM-2).
+async fn authenticate(handle: &mut SshHandle, req: &ConnectRequest) -> AppResult<()> {
+    match &req.auth {
+        AuthCredential::Password(password) => {
+            let ok = handle
+                .authenticate_password(req.username.clone(), password.clone())
+                .await?
+                .success();
+            if !ok {
+                return Err(AppError::Auth("password authentication failed".into()));
+            }
+        }
+        AuthCredential::PublicKey {
+            key_path,
+            passphrase,
+        } => {
+            let key = russh::keys::load_secret_key(key_path, passphrase.as_deref())
+                .map_err(|e| AppError::Auth(format!("could not load private key: {e}")))?;
+            let hash = handle.best_supported_rsa_hash().await?.flatten();
+            let key = russh::keys::PrivateKeyWithHashAlg::new(Arc::new(key), hash);
+            let ok = handle
+                .authenticate_publickey(req.username.clone(), key)
+                .await?
+                .success();
+            if !ok {
+                return Err(AppError::Auth("public-key authentication failed".into()));
+            }
+        }
+        AuthCredential::KeyboardInteractive(secret) => {
+            let mut response = handle
+                .authenticate_keyboard_interactive_start(req.username.clone(), None)
+                .await?;
+            loop {
+                match response {
+                    KeyboardInteractiveAuthResponse::Success => break,
+                    KeyboardInteractiveAuthResponse::Failure { .. } => {
+                        return Err(AppError::Auth(
+                            "keyboard-interactive authentication failed".into(),
+                        ));
+                    }
+                    // Answer every prompt with the stored secret (typical: one
+                    // password prompt). Full per-prompt UI is a future addition.
+                    KeyboardInteractiveAuthResponse::InfoRequest { prompts, .. } => {
+                        let answers = prompts.iter().map(|_| secret.clone()).collect();
+                        response = handle
+                            .authenticate_keyboard_interactive_respond(answers)
+                            .await?;
+                    }
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
 /// Per-session actor: forwards user input/resize to the SSH shell channel and
 /// streams shell output back to the frontend (base64 over a Tauri `Channel`).
 /// The connection stays alive via the `Arc<SshHandle>` held by `SessionManager`.
-async fn run_session(
+/// Emits `ssh://closed` with the session id when the shell ends (SM-2, §6.4).
+pub(crate) async fn run_session(
     mut channel: russh::Channel<Msg>,
     mut rx: mpsc::Receiver<SessionCommand>,
     output: Channel<String>,
+    app: AppHandle,
+    id: String,
 ) {
     let b64 = base64::engine::general_purpose::STANDARD;
 
@@ -184,7 +257,7 @@ async fn run_session(
                 match msg {
                     Some(ChannelMsg::Data { ref data }) => {
                         if output.send(b64.encode(&data[..])).is_err() {
-                            break; // frontend channel gone
+                            break;
                         }
                     }
                     Some(ChannelMsg::ExtendedData { ref data, .. }) => {
@@ -196,6 +269,8 @@ async fn run_session(
             }
         }
     }
+
+    let _ = app.emit("ssh://closed", &id);
 }
 
 #[cfg(test)]
@@ -212,12 +287,12 @@ mod tests {
     use super::*;
     use std::time::Duration;
 
-    fn test_opts() -> ConnectOptions {
-        ConnectOptions {
+    fn test_request() -> ConnectRequest {
+        ConnectRequest {
             host: "127.0.0.1".into(),
             port: 2222,
             username: "amos".into(),
-            password: "ammax123".into(),
+            auth: AuthCredential::Password("ammax123".into()),
             cols: 80,
             rows: 24,
         }
@@ -230,7 +305,7 @@ mod tests {
         let _ = std::fs::remove_file(&known_hosts);
 
         // 1) Connect, verify host key (TOFU learns it), open an interactive shell.
-        let (handle, mut channel) = open_shell(&test_opts(), known_hosts.clone())
+        let (handle, mut channel) = open_shell(&test_request(), known_hosts.clone())
             .await
             .expect("open_shell should succeed against the Docker SSH server");
 
@@ -281,7 +356,7 @@ mod tests {
         );
 
         // 4) Reconnect: the learned key must verify (match path, no re-learn).
-        let (handle2, _ch2) = open_shell(&test_opts(), known_hosts.clone())
+        let (handle2, _ch2) = open_shell(&test_request(), known_hosts.clone())
             .await
             .expect("reconnect should pass host-key verification");
         let kh = std::fs::read_to_string(&known_hosts).unwrap();

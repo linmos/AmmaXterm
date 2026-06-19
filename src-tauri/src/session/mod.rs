@@ -7,10 +7,11 @@ use std::sync::{Arc, Mutex};
 
 use russh::Disconnect;
 use tauri::ipc::Channel;
+use tauri::AppHandle;
 use tokio::sync::mpsc;
 
 use crate::error::{AppError, AppResult};
-use crate::ssh::{self, ConnectOptions, SessionCommand, SshHandle};
+use crate::ssh::{self, ConnectRequest, SessionCommand, SshHandle};
 
 /// One active session: the shell command channel plus the shared SSH handle
 /// (used to open SFTP channels on the same connection).
@@ -31,19 +32,26 @@ impl SessionManager {
         Self::default()
     }
 
-    /// Open a new SSH session and register it; returns the session id.
+    /// Open a new SSH session, spawn its streaming actor, and register it;
+    /// returns the session id.
     pub async fn connect(
         &self,
-        opts: ConnectOptions,
+        app: AppHandle,
+        req: ConnectRequest,
         known_hosts: PathBuf,
         output: Channel<String>,
     ) -> AppResult<String> {
-        let (commands, handle) = ssh::connect(&opts, known_hosts, output).await?;
+        let (handle, channel) = ssh::open_shell(&req, known_hosts).await?;
         let id = format!("session-{}", self.counter.fetch_add(1, Ordering::Relaxed));
-        self.sessions
-            .lock()
-            .unwrap()
-            .insert(id.clone(), Session { commands, handle });
+        let (tx, rx) = mpsc::channel(64);
+        tauri::async_runtime::spawn(ssh::run_session(channel, rx, output, app, id.clone()));
+        self.sessions.lock().unwrap().insert(
+            id.clone(),
+            Session {
+                commands: tx,
+                handle: Arc::new(handle),
+            },
+        );
         Ok(id)
     }
 
