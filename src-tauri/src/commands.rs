@@ -369,6 +369,52 @@ pub fn tunnel_list(tunnels: State<'_, TunnelManager>) -> Vec<TunnelInfo> {
     tunnels.list()
 }
 
+// --- Local file browser (FT-10 dual-pane) ---
+
+#[derive(serde::Serialize)]
+struct LocalEntry {
+    name: String,
+    is_dir: bool,
+    size: u64,
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LocalListing {
+    path: String,
+    entries: Vec<LocalEntry>,
+}
+
+/// List a local directory (defaults to the user's home). Directories first.
+#[tauri::command]
+pub fn local_list(path: Option<String>) -> AppResult<LocalListing> {
+    let dir = match path {
+        Some(p) if !p.is_empty() => std::path::PathBuf::from(p),
+        _ => home_dir().unwrap_or_else(|| std::path::PathBuf::from(".")),
+    };
+    let mut entries = Vec::new();
+    for entry in std::fs::read_dir(&dir)
+        .map_err(|e| AppError::Other(format!("cannot read {}: {e}", dir.display())))?
+    {
+        let entry = entry.map_err(|e| AppError::Other(e.to_string()))?;
+        let md = entry.metadata().ok();
+        entries.push(LocalEntry {
+            name: entry.file_name().to_string_lossy().into_owned(),
+            is_dir: md.as_ref().map(|m| m.is_dir()).unwrap_or(false),
+            size: md.as_ref().map(|m| m.len()).unwrap_or(0),
+        });
+    }
+    entries.sort_by(|a, b| {
+        b.is_dir
+            .cmp(&a.is_dir)
+            .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
+    });
+    Ok(LocalListing {
+        path: dir.to_string_lossy().into_owned(),
+        entries,
+    })
+}
+
 // --- SFTP transfer queue (FT-4) ---
 
 /// Queue an upload; returns the transfer id (progress via `transfer_list`).

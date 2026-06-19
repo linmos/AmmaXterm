@@ -5,6 +5,7 @@
 	import { app } from '$lib/state.svelte';
 	import { i18n } from '$lib/i18n.svelte';
 	import TransferQueue from './TransferQueue.svelte';
+	import LocalPane from './LocalPane.svelte';
 	import type { FileEntry } from './types';
 
 	interface Props {
@@ -29,6 +30,14 @@
 	let sortAsc = $state(true);
 	let chmodTarget = $state<string | null>(null);
 	let chmodValue = $state('');
+
+	// Dual-pane (FT-10): local browser alongside the remote listing.
+	let dual = $state(false);
+	let localPath = $state('');
+	function localJoin(name: string): string {
+		const sep = localPath.includes('\\') ? '\\' : '/';
+		return localPath.replace(/[\\/]+$/, '') + sep + name;
+	}
 
 	const shown = $derived.by(() => {
 		const q = filter.trim().toLowerCase();
@@ -161,6 +170,11 @@
 	}
 
 	async function download(entry: FileEntry) {
+		// In dual-pane mode download straight into the local pane's folder.
+		if (dual && localPath) {
+			await app.downloadFile(sessionId, join(path, entry.name), localJoin(entry.name));
+			return;
+		}
 		const target = await save({ defaultPath: entry.name, title: `${i18n.t('sftp.download')} ${entry.name}` });
 		if (typeof target !== 'string') return;
 		await app.downloadFile(sessionId, join(path, entry.name), target);
@@ -187,8 +201,15 @@
 		/>
 		<button onclick={() => (newFolder = '')} title={i18n.t('sftp.newFolder')} disabled={busy}>＋</button>
 		<button onclick={upload} title={i18n.t('sftp.upload')} disabled={busy}>⬆</button>
+		<button class:on={dual} onclick={() => (dual = !dual)} title={i18n.t('sftp.dual')}>⇆</button>
 		<button onclick={list} title={i18n.t('sftp.refresh')} disabled={loading || busy}>⟳</button>
 	</div>
+
+	{#if dual}
+		<div class="localwrap">
+			<LocalPane {sessionId} remotePath={path} onPath={(p) => (localPath = p)} />
+		</div>
+	{/if}
 
 	{#if newFolder !== null}
 		<div class="new-folder">
@@ -335,6 +356,21 @@
 		background: #2a2a2a;
 		color: #ddd;
 		cursor: pointer;
+	}
+	.bar button.on {
+		background: #0e639c;
+		border-color: #0e639c;
+		color: #fff;
+	}
+	.localwrap {
+		flex: 0 0 40%;
+		min-height: 0;
+		display: flex;
+		overflow: hidden;
+	}
+	.localwrap :global(.local) {
+		flex: 1;
+		height: 100%;
 	}
 	.new-folder {
 		display: flex;
