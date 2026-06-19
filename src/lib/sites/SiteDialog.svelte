@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
 	import { open } from '@tauri-apps/plugin-dialog';
+	import { homeDir, join } from '@tauri-apps/api/path';
 	import { app } from '$lib/state.svelte';
 	import { i18n } from '$lib/i18n.svelte';
 	import type { AuthMethod, Site, SiteInput, SiteOverrides } from './types';
@@ -81,7 +82,19 @@
 	}
 
 	async function browseKey() {
-		const picked = await open({ multiple: false, directory: false, title: i18n.t('site.keyPath') });
+		// Default the picker to the user's ~/.ssh, where keys usually live.
+		let defaultPath: string | undefined;
+		try {
+			defaultPath = await join(await homeDir(), '.ssh');
+		} catch {
+			defaultPath = undefined;
+		}
+		const picked = await open({
+			multiple: false,
+			directory: false,
+			defaultPath,
+			title: i18n.t('site.keyPath')
+		});
 		if (typeof picked === 'string') keyPath = picked;
 	}
 
