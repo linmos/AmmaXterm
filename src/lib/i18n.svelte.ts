@@ -60,6 +60,9 @@ const en: Messages = {
 	'settings.open': 'Settings',
 	'settings.title': 'Settings',
 	'settings.appearance': 'Appearance',
+	'settings.language': 'Language',
+	'lang.zhTW': '繁體中文',
+	'lang.en': 'English',
 	'settings.theme': 'Theme',
 	'theme.dark': 'Dark',
 	'theme.light': 'Light',
@@ -227,6 +230,9 @@ const zhTW: Messages = {
 	'settings.open': '設定',
 	'settings.title': '設定',
 	'settings.appearance': '外觀',
+	'settings.language': '語言',
+	'lang.zhTW': '繁體中文',
+	'lang.en': 'English',
 	'settings.theme': '主題',
 	'theme.dark': '深色',
 	'theme.light': '淺色',
@@ -355,6 +361,10 @@ class I18n {
 
 	toggle() {
 		this.locale = this.locale === 'en' ? 'zh-TW' : 'en';
+	}
+
+	setLocale(l: string) {
+		if (l === 'en' || l === 'zh-TW') this.locale = l;
 	}
 }
 

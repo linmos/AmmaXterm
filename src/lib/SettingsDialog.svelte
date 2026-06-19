@@ -55,6 +55,13 @@
 
 		<h3>{i18n.t('settings.appearance')}</h3>
 		<label>
+			{i18n.t('settings.language')}
+			<select value={i18n.locale} onchange={(e) => i18n.setLocale(e.currentTarget.value)}>
+				<option value="zh-TW">{i18n.t('lang.zhTW')}</option>
+				<option value="en">{i18n.t('lang.en')}</option>
+			</select>
+		</label>
+		<label>
 			{i18n.t('settings.theme')}
 			<select bind:value={theme}>
 				{#each THEME_NAMES as name (name)}
