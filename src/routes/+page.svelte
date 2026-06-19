@@ -5,10 +5,16 @@
 	import SiteSidebar from '$lib/sites/SiteSidebar.svelte';
 	import TerminalTabs from '$lib/session/TerminalTabs.svelte';
 	import SftpPanel from '$lib/sftp/SftpPanel.svelte';
+	import TunnelPanel from '$lib/tunnel/TunnelPanel.svelte';
 	import HostKeyDialog from '$lib/HostKeyDialog.svelte';
 	import { i18n } from '$lib/i18n.svelte';
 
-	let showFiles = $state(false);
+	type RightPanel = 'none' | 'files' | 'tunnels';
+	let rightPanel = $state<RightPanel>('none');
+
+	function toggle(panel: RightPanel) {
+		rightPanel = rightPanel === panel ? 'none' : panel;
+	}
 
 	onMount(() => {
 		app.init();
@@ -23,20 +29,34 @@
 
 	<div class="center">
 		<TerminalTabs />
-		<button
-			class="files-toggle"
-			class:active={showFiles}
-			disabled={!activeSession}
-			onclick={() => (showFiles = !showFiles)}
-		>
-			{i18n.t('common.files')}
-		</button>
+		<div class="panel-toggles">
+			<button
+				class="panel-toggle"
+				class:active={rightPanel === 'tunnels'}
+				disabled={!activeSession}
+				onclick={() => toggle('tunnels')}
+			>
+				{i18n.t('tunnels.toggle')}
+			</button>
+			<button
+				class="panel-toggle"
+				class:active={rightPanel === 'files'}
+				disabled={!activeSession}
+				onclick={() => toggle('files')}
+			>
+				{i18n.t('common.files')}
+			</button>
+		</div>
 	</div>
 
-	{#if showFiles && activeSession}
+	{#if rightPanel !== 'none' && activeSession}
 		<div class="right">
 			{#key activeSession}
-				<SftpPanel sessionId={activeSession} />
+				{#if rightPanel === 'files'}
+					<SftpPanel sessionId={activeSession} />
+				{:else if rightPanel === 'tunnels'}
+					<TunnelPanel sessionId={activeSession} />
+				{/if}
 			{/key}
 		</div>
 	{/if}
@@ -69,10 +89,15 @@
 		min-width: 0;
 		border-left: 1px solid #333;
 	}
-	.files-toggle {
+	.panel-toggles {
 		position: absolute;
 		top: 6px;
 		right: 10px;
+		display: flex;
+		gap: 4px;
+		z-index: 5;
+	}
+	.panel-toggle {
 		padding: 4px 10px;
 		border: 1px solid #555;
 		border-radius: 6px;
@@ -80,14 +105,13 @@
 		color: #ddd;
 		font: 12px system-ui, sans-serif;
 		cursor: pointer;
-		z-index: 5;
 	}
-	.files-toggle.active {
+	.panel-toggle.active {
 		background: #0e639c;
 		border-color: #0e639c;
 		color: #fff;
 	}
-	.files-toggle:disabled {
+	.panel-toggle:disabled {
 		opacity: 0.4;
 		cursor: default;
 	}

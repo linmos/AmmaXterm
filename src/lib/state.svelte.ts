@@ -3,6 +3,7 @@ import { listen } from '@tauri-apps/api/event';
 import { settings } from './settings.svelte';
 import type { ImportedSite, Site, SiteInput } from './sites/types';
 import type { TerminalApi, TerminalSize } from './terminal/types';
+import type { TunnelInfo, TunnelSpec } from './tunnel/types';
 
 export type TabStatus = 'connecting' | 'connected' | 'closed' | 'error';
 
@@ -49,6 +50,7 @@ class AppState {
 	tabs = $state<Tab[]>([]);
 	activeKey = $state<string | null>(null);
 	hostKeyPrompt = $state<HostKeyPrompt | null>(null);
+	tunnels = $state<TunnelInfo[]>([]);
 
 	get activeTab(): Tab | undefined {
 		return this.tabs.find((t) => t.key === this.activeKey);
@@ -104,6 +106,22 @@ class AppState {
 	async deleteSite(id: string): Promise<void> {
 		await invoke('site_delete', { id });
 		await this.loadSites();
+	}
+
+	// --- tunnels / port forwarding (PF-1..PF-7) ---
+
+	async refreshTunnels() {
+		this.tunnels = await invoke<TunnelInfo[]>('tunnel_list');
+	}
+
+	async openTunnel(sessionId: string, spec: TunnelSpec) {
+		await invoke<string>('tunnel_open', { sessionId, spec });
+		await this.refreshTunnels();
+	}
+
+	async closeTunnel(id: string) {
+		await invoke('tunnel_close', { id }).catch(() => {});
+		await this.refreshTunnels();
 	}
 
 	// --- import / export (SM-7, SM-8) ---

@@ -13,6 +13,7 @@ use crate::settings::{Settings, SettingsStore};
 use crate::sftp::FileEntry;
 use crate::ssh::{AuthCredential, ConnectOptions, ConnectRequest, HostKeyPrompts};
 use crate::store::{AuthMethod, Site, SiteInput, SiteStore};
+use crate::tunnel::{TunnelInfo, TunnelManager, TunnelSpec};
 
 /// Resolve (and ensure) the app config directory.
 fn config_dir(app: &AppHandle) -> AppResult<std::path::PathBuf> {
@@ -130,9 +131,14 @@ pub async fn ssh_resize(
     manager.resize(&id, cols, rows).await
 }
 
-/// Close a session.
+/// Close a session (and tear down any tunnels bound to it).
 #[tauri::command]
-pub async fn ssh_disconnect(id: String, manager: State<'_, SessionManager>) -> AppResult<()> {
+pub async fn ssh_disconnect(
+    id: String,
+    manager: State<'_, SessionManager>,
+    tunnels: State<'_, TunnelManager>,
+) -> AppResult<()> {
+    tunnels.close_for_session(&id);
     manager.disconnect(&id).await
 }
 
@@ -309,6 +315,32 @@ pub fn import_sites_backup(path: String) -> AppResult<Vec<ImportedSite>> {
 #[tauri::command]
 pub fn export_sites(path: String, store: State<'_, SiteStore>) -> AppResult<()> {
     store.export_to(std::path::Path::new(&path))
+}
+
+// --- Port forwarding / tunnels (PF-1..PF-7) ---
+
+/// Open a tunnel over an active session; returns the tunnel id.
+#[tauri::command]
+pub async fn tunnel_open(
+    session_id: String,
+    spec: TunnelSpec,
+    manager: State<'_, SessionManager>,
+    tunnels: State<'_, TunnelManager>,
+) -> AppResult<String> {
+    let handle = manager.handle(&session_id)?;
+    tunnels.open(session_id, spec, handle).await
+}
+
+/// Close a single tunnel.
+#[tauri::command]
+pub fn tunnel_close(id: String, tunnels: State<'_, TunnelManager>) {
+    tunnels.close(&id);
+}
+
+/// List all active tunnels (for the management panel, PF-5).
+#[tauri::command]
+pub fn tunnel_list(tunnels: State<'_, TunnelManager>) -> Vec<TunnelInfo> {
+    tunnels.list()
 }
 
 // --- Settings (TM-11, ST-1, ST-2) ---
