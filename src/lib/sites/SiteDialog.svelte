@@ -435,6 +435,7 @@
 	}
 	.tdel:hover {
 		color: #ff6b6b;
+		background: transparent;
 	}
 	.tadd {
 		display: flex;

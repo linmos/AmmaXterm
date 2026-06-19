@@ -215,6 +215,7 @@
 	}
 	.x:hover {
 		color: #ff6b6b;
+		background: transparent;
 	}
 	.empty {
 		opacity: 0.5;
