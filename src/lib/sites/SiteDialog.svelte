@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
+	import { open } from '@tauri-apps/plugin-dialog';
 	import { app } from '$lib/state.svelte';
 	import { i18n } from '$lib/i18n.svelte';
 	import type { AuthMethod, Site, SiteInput } from './types';
@@ -38,6 +39,11 @@
 	let password = $state('');
 	let saving = $state(false);
 	let errorMsg = $state<string | undefined>(undefined);
+
+	async function browseKey() {
+		const picked = await open({ multiple: false, directory: false, title: i18n.t('site.keyPath') });
+		if (typeof picked === 'string') keyPath = picked;
+	}
 
 	// Inline "add tunnel" row.
 	let tKind = $state('local');
@@ -145,7 +151,13 @@
 		</label>
 
 		{#if authType === 'publicKey'}
-			<label>{i18n.t('site.keyPath')}<input bind:value={keyPath} placeholder="~/.ssh/id_ed25519" /></label>
+			<label>
+				{i18n.t('site.keyPath')}
+				<span class="keyrow">
+					<input bind:value={keyPath} placeholder="~/.ssh/id_ed25519" />
+					<button type="button" class="browse" onclick={browseKey}>{i18n.t('common.browse')}</button>
+				</span>
+			</label>
 			<label>
 				{i18n.t('site.passphrase')} {#if editing}<span class="hint">{i18n.t('site.blankKeep')}</span>{/if}
 				<input type="password" bind:value={password} />
@@ -257,6 +269,27 @@
 	}
 	.hint {
 		opacity: 0.6;
+	}
+	.keyrow {
+		display: flex;
+		gap: 6px;
+	}
+	.keyrow input {
+		flex: 1;
+		min-width: 0;
+	}
+	.browse {
+		flex: none;
+		padding: 8px 12px;
+		border: 1px solid #555;
+		border-radius: 6px;
+		background: #2a2a2a;
+		color: #ddd;
+		font: 13px system-ui, sans-serif;
+		cursor: pointer;
+	}
+	.browse:hover {
+		background: #3a3a3a;
 	}
 	.tunnels {
 		display: flex;
