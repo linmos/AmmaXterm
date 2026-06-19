@@ -7,7 +7,7 @@
 > 連接埠轉發做到簡單、快速、安全。
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-![Status](https://img.shields.io/badge/status-early%20development-orange)
+![Status](https://img.shields.io/badge/status-active%20development-brightgreen)
 
 ---
 
@@ -17,12 +17,20 @@ AmmaXterm focuses on the few things people actually use a remote tool for, and
 does them well:
 
 - **SSH terminal** — SSH 2.0 with password / public-key / keyboard-interactive
-  auth, multi-tab sessions, true color, UTF-8, and mandatory host-key verification.
-- **SFTP file transfer** — browse, upload/download (recursive), and manage
-  remote files.
-- **Site management** — save, group, search, and quick-connect to hosts.
-- **Port forwarding** — Local (`-L`), Remote (`-R`), and Dynamic SOCKS (`-D`),
-  with secure defaults (binds to `127.0.0.1`).
+  auth, multi-tab sessions, true color, UTF-8, mandatory host-key verification,
+  in-terminal search, themes & fonts, keepalive + auto-reconnect, and session
+  logging.
+- **SFTP file transfer** — browse with filter/sort, a transfer queue (progress,
+  speed, pause/resume, auto-retry), drag-and-drop upload, dual-pane (local ⇆
+  remote), `chmod`, follow-terminal-cd, and large-directory virtualization.
+- **Site management** — save, group (drag to reorder), search, `user@host:port`
+  quick-connect, import OpenSSH `config`, and export/backup.
+- **Port forwarding** — Local (`-L`), Dynamic SOCKS5 (`-D`), and Remote (`-R`),
+  with secure defaults (local listeners bind `127.0.0.1`; `-R` exposure off by
+  default) and a live tunnel-management panel.
+- **Keys & secrets** — credentials in the OS keychain; an Ed25519 / RSA key
+  generator; and an AES-256-GCM + Argon2id encrypted vault for systems without a
+  keychain.
 
 Built to be **fast to start, intuitive, secure by default, and auditable** —
 because the source is open.
@@ -43,8 +51,11 @@ alternative for the core workflows.
 
 ## Status
 
-🚧 **Early development.** Currently at **M0 (technical validation)** — proving
-the Tauri + russh + xterm.js pipeline. See the roadmap below.
+🚀 **Active development.** M0 + **M1 (MVP)** are shipped (tagged `v0.1.0`), and
+**M2 (v1.0)** is feature-complete on `main` with CI green — site management,
+terminal enhancements, the full SFTP suite, port forwarding (`-L`/`-D`/`-R`),
+and key generation + the encrypted vault. Remaining for the v1.0 tag: bastion
+**ProxyJump**, PuTTY-session import, and broader real-world testing.
 
 ## Build from source
 
@@ -64,12 +75,12 @@ npm run tauri build   # produce a release bundle
 
 ### Roadmap (high level)
 
-| Milestone | Goal |
-|-----------|------|
-| **M0** | Tech validation: single SSH shell + basic SFTP + host-key check |
-| **M1 (MVP)** | Site CRUD, secure credential storage, multi-tab terminal, SFTP basics, first release |
-| **M2 (v1.0)** | Groups/search/import, reconnect, bastion (ProxyJump), transfer queue, **port forwarding** |
-| **M3 (v1.x)** | Split panes, edit-in-place, tags, broadcast input, full i18n |
+| Milestone | Goal | Status |
+|-----------|------|--------|
+| **M0** | Tech validation: single SSH shell + basic SFTP + host-key check | ✅ Done |
+| **M1 (MVP)** | Site CRUD, secure credential storage, multi-tab terminal, SFTP basics, first release | ✅ Shipped (`v0.1.0`) |
+| **M2 (v1.0)** | Groups/search/import, reconnect, transfer queue, **port forwarding**, key gen + vault | ✅ Feature-complete (ProxyJump / PuTTY import pending) |
+| **M3 (v1.x)** | Split panes, edit-in-place, tags, broadcast input, full i18n | ⬜ Planned |
 
 ## Contributing
 
