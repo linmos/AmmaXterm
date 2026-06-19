@@ -91,8 +91,8 @@
 
 <style>
 	.queue {
-		border-top: 1px solid #333;
-		background: #161616;
+		border-top: 1px solid var(--vsc-border);
+		background: rgba(0, 0, 0, 0.22);
 		max-height: 38%;
 		overflow: auto;
 		flex: none;
@@ -106,12 +106,15 @@
 	}
 	.clearall {
 		padding: 2px 8px;
-		border: 1px solid #444;
-		border-radius: 4px;
-		background: #2a2a2a;
-		color: #ccc;
+		border: none;
+		border-radius: 3px;
+		background: var(--vsc-button-secondary-bg);
+		color: var(--vsc-button-secondary-fg);
 		font-size: 11px;
 		cursor: pointer;
+	}
+	.clearall:hover {
+		background: var(--vsc-button-secondary-hover);
 	}
 	ul {
 		margin: 0;
@@ -147,18 +150,18 @@
 	.tag {
 		flex: none;
 		font-size: 10px;
-		padding: 0 6px;
+		padding: 1px 7px;
 		border-radius: 8px;
-		background: #3a3a3a;
-		color: #ccc;
+		background: var(--vsc-badge-bg);
+		color: var(--vsc-badge-fg);
 	}
 	.tag.ok {
-		background: #1b3a2a;
-		color: #9fe0b8;
+		background: rgba(63, 185, 80, 0.18);
+		color: var(--vsc-green);
 	}
 	.tag.bad {
-		background: #3a1b1b;
-		color: #f0a59a;
+		background: rgba(241, 76, 76, 0.18);
+		color: var(--vsc-red);
 	}
 	.x,
 	.rt {
@@ -166,7 +169,7 @@
 		padding: 0 6px;
 		border: none;
 		background: transparent;
-		color: #ccc;
+		color: var(--vsc-sidebar-fg);
 		font-size: 14px;
 		cursor: pointer;
 	}
@@ -178,15 +181,15 @@
 		margin-top: 3px;
 		height: 4px;
 		border-radius: 2px;
-		background: #2a2a2a;
+		background: rgba(255, 255, 255, 0.1);
 		overflow: hidden;
 	}
 	.fill {
 		height: 100%;
-		background: #0e639c;
+		background: var(--vsc-button-bg);
 		transition: width 0.3s;
 	}
 	.fill.err {
-		background: #a33;
+		background: var(--vsc-red);
 	}
 </style>

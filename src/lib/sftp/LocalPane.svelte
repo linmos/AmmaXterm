@@ -92,40 +92,47 @@
 		display: flex;
 		flex-direction: column;
 		min-height: 0;
-		border-bottom: 2px solid #333;
-		background: #181818;
+		border-bottom: 2px solid var(--vsc-border);
+		background: rgba(0, 0, 0, 0.18);
 	}
 	.bar {
 		display: flex;
 		align-items: center;
 		gap: 4px;
 		padding: 5px 6px;
-		border-bottom: 1px solid #2c2c2c;
+		border-bottom: 1px solid var(--vsc-border);
 	}
 	.lbl {
 		font-size: 11px;
 		font-weight: 600;
-		opacity: 0.7;
+		color: var(--vsc-muted);
 		flex: none;
 	}
 	.bar .path {
 		flex: 1;
 		min-width: 0;
 		padding: 3px 6px;
-		border: 1px solid #3c3c3c;
+		border: 1px solid var(--vsc-input-border);
 		border-radius: 4px;
-		background: #1e1e1e;
-		color: #eee;
-		font: 12px system-ui, sans-serif;
+		background: var(--vsc-input-bg);
+		color: var(--vsc-input-fg);
+		font: 12px var(--vsc-font);
+	}
+	.bar .path:focus {
+		outline: 1px solid var(--vsc-focus-border);
+		outline-offset: -1px;
 	}
 	.bar button {
 		flex: none;
 		padding: 3px 7px;
-		border: 1px solid #444;
-		border-radius: 4px;
-		background: #2a2a2a;
-		color: #ddd;
+		border: none;
+		border-radius: 3px;
+		background: var(--vsc-button-secondary-bg);
+		color: var(--vsc-button-secondary-fg);
 		cursor: pointer;
+	}
+	.bar button:hover {
+		background: var(--vsc-button-secondary-hover);
 	}
 	.list {
 		flex: 1;
@@ -140,7 +147,7 @@
 		align-items: center;
 	}
 	.list li:hover {
-		background: #2a2a2a;
+		background: var(--vsc-list-hover-bg);
 	}
 	.row {
 		flex: 1;
@@ -152,7 +159,7 @@
 		border: none;
 		background: transparent;
 		color: inherit;
-		font: 12px system-ui, sans-serif;
+		font: 12px var(--vsc-font);
 		text-align: left;
 		cursor: default;
 	}
@@ -166,7 +173,7 @@
 		white-space: nowrap;
 	}
 	.row .size {
-		opacity: 0.6;
+		color: var(--vsc-muted);
 		flex: none;
 	}
 	.up {
@@ -174,15 +181,15 @@
 		padding: 2px 7px;
 		border: none;
 		background: transparent;
-		color: #ccc;
+		color: var(--vsc-sidebar-fg);
 		cursor: pointer;
 	}
 	.up:hover {
-		background: #3a3a3a;
+		background: var(--vsc-button-secondary-hover);
 	}
 	.err {
 		margin: 4px 8px;
-		color: #f48771;
+		color: var(--vsc-red);
 		font-size: 12px;
 	}
 	.empty {

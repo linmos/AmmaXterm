@@ -400,9 +400,9 @@
 		display: flex;
 		flex-direction: column;
 		height: 100%;
-		color: #ddd;
-		font: 13px system-ui, sans-serif;
-		background: #1b1b1b;
+		color: var(--vsc-sidebar-fg);
+		font: 13px var(--vsc-font);
+		background: var(--vsc-sidebar-bg);
 	}
 	.dropzone {
 		position: absolute;
@@ -412,7 +412,7 @@
 		align-items: center;
 		justify-content: center;
 		background: rgba(14, 99, 156, 0.25);
-		border: 2px dashed #0e639c;
+		border: 2px dashed var(--vsc-button-bg);
 		border-radius: 6px;
 		color: #cfe6ff;
 		font-size: 14px;
@@ -422,7 +422,7 @@
 		display: flex;
 		gap: 4px;
 		padding: 6px;
-		border-bottom: 1px solid #333;
+		border-bottom: 1px solid var(--vsc-border);
 	}
 	.bar .path {
 		flex: 1;
@@ -430,24 +430,31 @@
 	}
 	input {
 		padding: 4px 6px;
-		border: 1px solid #3c3c3c;
+		border: 1px solid var(--vsc-input-border);
 		border-radius: 4px;
-		background: #1e1e1e;
-		color: #eee;
-		font: 13px system-ui, sans-serif;
+		background: var(--vsc-input-bg);
+		color: var(--vsc-input-fg);
+		font: 13px var(--vsc-font);
+	}
+	input:focus {
+		outline: 1px solid var(--vsc-focus-border);
+		outline-offset: -1px;
 	}
 	.bar button,
 	.new-folder button {
 		padding: 4px 8px;
-		border: 1px solid #444;
-		border-radius: 4px;
-		background: #2a2a2a;
-		color: #ddd;
+		border: none;
+		border-radius: 3px;
+		background: var(--vsc-button-secondary-bg);
+		color: var(--vsc-button-secondary-fg);
 		cursor: pointer;
 	}
+	.bar button:hover,
+	.new-folder button:hover {
+		background: var(--vsc-button-secondary-hover);
+	}
 	.bar button.on {
-		background: #0e639c;
-		border-color: #0e639c;
+		background: var(--vsc-button-bg);
 		color: #fff;
 	}
 	.localwrap {
@@ -464,8 +471,8 @@
 		display: flex;
 		gap: 4px;
 		padding: 6px;
-		border-bottom: 1px solid #333;
-		background: #161616;
+		border-bottom: 1px solid var(--vsc-border);
+		background: rgba(0, 0, 0, 0.18);
 	}
 	.new-folder input {
 		flex: 1;
@@ -486,7 +493,7 @@
 		flex-direction: column;
 		gap: 4px;
 		padding: 6px;
-		border-bottom: 1px solid #333;
+		border-bottom: 1px solid var(--vsc-border);
 	}
 	.filterbar .filter {
 		width: 100%;
@@ -499,16 +506,18 @@
 	.sorts button {
 		flex: 1;
 		padding: 3px 4px;
-		border: 1px solid #3c3c3c;
-		border-radius: 4px;
-		background: #232323;
-		color: #bbb;
-		font: 11px system-ui, sans-serif;
+		border: none;
+		border-radius: 3px;
+		background: var(--vsc-button-secondary-bg);
+		color: var(--vsc-sidebar-fg);
+		font: 11px var(--vsc-font);
 		cursor: pointer;
 	}
+	.sorts button:hover {
+		background: var(--vsc-button-secondary-hover);
+	}
 	.sorts button.on {
-		background: #0e639c;
-		border-color: #0e639c;
+		background: var(--vsc-button-bg);
 		color: #fff;
 	}
 	.vrow {
@@ -520,7 +529,7 @@
 		box-sizing: border-box;
 	}
 	.vrow:hover {
-		background: #2a2a2a;
+		background: var(--vsc-list-hover-bg);
 	}
 	.row {
 		flex: 1;
@@ -551,7 +560,7 @@
 		white-space: nowrap;
 	}
 	.row .size {
-		opacity: 0.6;
+		color: var(--vsc-muted);
 		font-variant-numeric: tabular-nums;
 		flex: none;
 	}
@@ -569,12 +578,12 @@
 		align-items: center;
 		gap: 6px;
 		padding: 6px 8px;
-		border-top: 1px solid #333;
-		background: #161616;
+		border-top: 1px solid var(--vsc-border);
+		background: rgba(0, 0, 0, 0.18);
 	}
 	.chmod .lbl {
 		font-size: 11px;
-		opacity: 0.7;
+		color: var(--vsc-muted);
 	}
 	.chmod .octal {
 		width: 70px;
@@ -582,10 +591,13 @@
 	.chmod button {
 		padding: 3px 10px;
 		border: none;
-		border-radius: 4px;
-		background: #0e639c;
+		border-radius: 3px;
+		background: var(--vsc-button-bg);
 		color: #fff;
 		cursor: pointer;
+	}
+	.chmod button:hover {
+		background: var(--vsc-button-hover);
 	}
 	.rename {
 		flex: 1;
@@ -601,18 +613,18 @@
 		border: none;
 		border-radius: 4px;
 		background: transparent;
-		color: #ccc;
+		color: var(--vsc-sidebar-fg);
 		cursor: pointer;
 	}
 	.ops .sm:hover {
-		background: #3a3a3a;
+		background: var(--vsc-button-secondary-hover);
 	}
 	.ops .sm.danger {
-		color: #f48771;
+		color: var(--vsc-red);
 	}
 	.err {
 		margin: 6px 8px;
-		color: #f48771;
+		color: var(--vsc-red);
 		font-size: 12px;
 		word-break: break-word;
 	}
