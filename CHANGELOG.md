@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Planned
+- Bastion / ProxyJump (multi-hop) and the remaining per-site overrides.
+- PuTTY session import.
+
+## [0.3.0] - 2026-06-19
+
 ### Added
 - **Light theme** for the whole shell (not just the terminal), with a new
   "follow system" theme option that tracks the OS colour scheme live and is now
@@ -16,10 +22,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **SFTP multi-select** with Ctrl/Shift click or Shift+Up/Down (arrow keys move a
   cursor; Enter opens a folder, Esc clears) and **batch download**: select several
   remote files and download them all into one folder in a single action.
+- App-wide suppression of the WebView's default right-click menu (the terminal
+  keeps its own copy/paste handler).
 
-### Planned
-- Bastion / ProxyJump (multi-hop) and the remaining per-site overrides.
-- PuTTY session import.
+### Changed
+- Session rows are indented under their group header for clearer nesting.
 
 ## [0.2.0] - 2026-06-19
 
