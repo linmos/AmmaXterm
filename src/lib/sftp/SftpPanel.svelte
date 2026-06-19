@@ -25,6 +25,15 @@
 	let renameValue = $state('');
 	let confirmingDelete = $state<string | null>(null);
 
+	// Multi-select (ctrl/shift) over files for batch operations like download.
+	// Holds selected file names in the current directory; `anchorIdx` is the
+	// shift-range pivot, an index into `shown`.
+	let selected = $state<Set<string>>(new Set());
+	let anchorIdx = $state<number | null>(null);
+	// The keyboard "cursor" row (index into `shown`); arrow keys move it.
+	let cursorIdx = $state<number | null>(null);
+	const selectedCount = $derived(selected.size);
+
 	// Filter + sort (FT-9) and chmod (FT-8).
 	let filter = $state('');
 	let sortKey = $state<'name' | 'size' | 'modified'>('name');
@@ -49,9 +58,12 @@
 			}
 		});
 	});
+	function joinLocal(dir: string, name: string): string {
+		const sep = dir.includes('\\') ? '\\' : '/';
+		return dir.replace(/[\\/]+$/, '') + sep + name;
+	}
 	function localJoin(name: string): string {
-		const sep = localPath.includes('\\') ? '\\' : '/';
-		return localPath.replace(/[\\/]+$/, '') + sep + name;
+		return joinLocal(localPath, name);
 	}
 
 	// Most shells don't emit OSC 7 over plain SSH (the cwd report follow-cd needs).
@@ -135,6 +147,7 @@
 	async function list() {
 		loading = true;
 		errorMsg = undefined;
+		clearSelection();
 		try {
 			entries = await invoke<FileEntry[]>('sftp_list', { id: sessionId, path });
 		} catch (err) {
@@ -240,6 +253,113 @@
 		for (const f of files) {
 			await app.uploadFile(sessionId, f, join(path, basename(f)));
 		}
+	}
+
+	function clearSelection() {
+		selected = new Set();
+		anchorIdx = null;
+		cursorIdx = null;
+	}
+
+	/** File names (folders skipped) in the inclusive `shown` index range. */
+	function rangeNames(a: number, b: number): string[] {
+		const [lo, hi] = a <= b ? [a, b] : [b, a];
+		const names: string[] = [];
+		for (let i = lo; i <= hi; i++) {
+			const en = shown[i];
+			if (en && !en.is_dir) names.push(en.name);
+		}
+		return names;
+	}
+
+	/** Row click with selection semantics: plain click on a folder navigates;
+	 *  on a file (plain/ctrl/shift) it drives the multi-select set. */
+	function rowClick(entry: FileEntry, idx: number, e: MouseEvent) {
+		const mod = e.ctrlKey || e.metaKey;
+		if (entry.is_dir && !mod && !e.shiftKey) {
+			openEntry(entry);
+			return;
+		}
+		scroller?.focus(); // take keyboard focus so arrow keys drive selection
+		cursorIdx = idx;
+		if (entry.is_dir) return; // folders aren't part of a file selection
+		const name = entry.name;
+		if (e.shiftKey && anchorIdx !== null) {
+			// Range from the anchor to here; ctrl extends, otherwise replaces.
+			selected = new Set([...(mod ? selected : []), ...rangeNames(anchorIdx, idx)]);
+		} else if (mod) {
+			const next = new Set(selected);
+			if (next.has(name)) next.delete(name);
+			else next.add(name);
+			selected = next;
+			anchorIdx = idx;
+		} else {
+			selected = new Set([name]);
+			anchorIdx = idx;
+		}
+	}
+
+	/** Keyboard navigation over the list: Up/Down move the cursor (selecting that
+	 *  file); Shift+Up/Down extend the selection from the anchor; Enter opens a
+	 *  folder; Escape clears. */
+	function onListKeydown(e: KeyboardEvent) {
+		if (e.key === 'Escape') {
+			clearSelection();
+			return;
+		}
+		if (e.key === 'Enter') {
+			const en = cursorIdx !== null ? shown[cursorIdx] : null;
+			if (en?.is_dir) {
+				e.preventDefault();
+				openEntry(en);
+			}
+			return;
+		}
+		if ((e.key !== 'ArrowDown' && e.key !== 'ArrowUp') || !shown.length) return;
+		e.preventDefault();
+		const delta = e.key === 'ArrowDown' ? 1 : -1;
+		const from = cursorIdx ?? (delta === 1 ? -1 : shown.length);
+		const next = Math.max(0, Math.min(shown.length - 1, from + delta));
+		cursorIdx = next;
+		if (e.shiftKey) {
+			if (anchorIdx === null) anchorIdx = next;
+			selected = new Set(rangeNames(anchorIdx, next));
+		} else {
+			anchorIdx = next;
+			const en = shown[next];
+			selected = en && !en.is_dir ? new Set([en.name]) : new Set();
+		}
+		scrollToRow(next);
+	}
+
+	/** Keep row `i` within the virtual scroller's viewport. */
+	function scrollToRow(i: number) {
+		if (!scroller) return;
+		const top = i * ROW_H;
+		if (top < scroller.scrollTop) scroller.scrollTop = top;
+		else if (top + ROW_H > scroller.scrollTop + scroller.clientHeight) {
+			scroller.scrollTop = top + ROW_H - scroller.clientHeight;
+		}
+	}
+
+	/** Batch-download every selected file into one destination folder. */
+	async function downloadSelected() {
+		const files = shown.filter((e) => !e.is_dir && selected.has(e.name));
+		if (!files.length) return;
+		let dir = dual && localPath ? localPath : null;
+		if (!dir) {
+			const picked = await open({
+				directory: true,
+				multiple: false,
+				title: i18n.t('sftp.downloadSelected')
+			});
+			if (typeof picked !== 'string') return;
+			dir = picked;
+		}
+		for (const f of files) {
+			await app.downloadFile(sessionId, join(path, f.name), joinLocal(dir, f.name));
+		}
+		clearSelection();
 	}
 
 	async function download(entry: FileEntry) {
@@ -356,10 +476,22 @@
 		<p class="err">{errorMsg}</p>
 	{/if}
 
+	{#if selectedCount > 0}
+		<div class="selbar">
+			<span class="selcount">{i18n.t('sftp.selected').replace('{n}', String(selectedCount))}</span>
+			<button class="primary" onclick={downloadSelected} disabled={busy}>⬇ {i18n.t('sftp.downloadSelected')}</button>
+			<button onclick={clearSelection}>{i18n.t('sftp.clearSelection')}</button>
+		</div>
+	{/if}
+
+	<!-- svelte-ignore a11y_no_static_element_interactions -->
+	<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
 	<div
 		class="listwrap"
 		bind:this={scroller}
 		bind:clientHeight={viewH}
+		tabindex="0"
+		onkeydown={onListKeydown}
 		onscroll={() => (scrollTop = scroller?.scrollTop ?? 0)}
 	>
 		{#if !shown.length && !loading && !errorMsg}
@@ -372,7 +504,9 @@
 						<button
 							class="row"
 							class:dir={entry.is_dir}
-							onclick={() => openEntry(entry)}
+							class:selected={selected.has(entry.name)}
+							class:cursor={cursorIdx === vStart + vi}
+							onclick={(e) => rowClick(entry, vStart + vi, e)}
 							oncontextmenu={(e) => openMenu(entry, e)}
 						>
 							<span class="top">
@@ -559,6 +693,40 @@
 		flex: 1;
 		min-width: 0;
 	}
+	.selbar {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		padding: 5px 8px;
+		border-bottom: 1px solid var(--vsc-border);
+		background: rgba(0, 0, 0, 0.18);
+	}
+	.selbar .selcount {
+		flex: 1;
+		min-width: 0;
+		font-size: 12px;
+		color: var(--vsc-muted);
+	}
+	.selbar button {
+		padding: 4px 8px;
+		border: none;
+		border-radius: 3px;
+		background: var(--vsc-button-secondary-bg);
+		color: var(--vsc-button-secondary-fg);
+		font: 12px var(--vsc-font);
+		cursor: pointer;
+	}
+	.selbar button:hover {
+		background: var(--vsc-button-secondary-hover);
+	}
+	.selbar button.primary {
+		background: var(--vsc-button-bg);
+		color: #fff;
+	}
+	.selbar button:disabled {
+		opacity: 0.5;
+		cursor: default;
+	}
 	.listwrap {
 		flex: 1;
 		min-height: 0;
@@ -629,6 +797,17 @@
 	.row.dir {
 		cursor: pointer;
 		color: #6cb6ff;
+	}
+	/* Highlight the whole row when its file is part of the selection. */
+	.vrow:has(.row.selected) {
+		background: var(--vsc-list-active-bg);
+	}
+	/* The keyboard cursor row gets a focus ring (inset, so it never shifts layout). */
+	.vrow:has(.row.cursor) {
+		box-shadow: inset 0 0 0 1px var(--vsc-focus-border);
+	}
+	.listwrap:focus {
+		outline: none;
 	}
 	.row .top {
 		display: flex;

@@ -14,6 +14,7 @@ export interface Settings {
 	scrollback: number;
 	keepaliveSecs: number;
 	autoReconnect: boolean;
+	copyOnSelect: boolean;
 }
 
 // "system" follows the OS colour scheme; "dark"/"light" pin a concrete palette.
@@ -60,7 +61,8 @@ const DEFAULTS: Settings = {
 	fontSize: 14,
 	scrollback: 5000,
 	keepaliveSecs: 30,
-	autoReconnect: false
+	autoReconnect: false,
+	copyOnSelect: true
 };
 
 class AppSettings {

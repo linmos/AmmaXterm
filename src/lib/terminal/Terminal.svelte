@@ -22,6 +22,8 @@
 		fontFamily?: string;
 		scrollback?: number;
 		theme?: ITheme;
+		/** Copy the selection to the clipboard as soon as it is made (TM-4). */
+		copyOnSelect?: boolean;
 	}
 
 	let {
@@ -32,7 +34,8 @@
 		fontSize = 14,
 		fontFamily = 'Consolas, "Cascadia Mono", "DejaVu Sans Mono", monospace',
 		scrollback = 5000,
-		theme = { background: '#1e1e1e', foreground: '#d4d4d4' }
+		theme = { background: '#1e1e1e', foreground: '#d4d4d4' },
+		copyOnSelect = true
 	}: Props = $props();
 
 	let container: HTMLDivElement;
@@ -130,6 +133,14 @@
 
 		term.onData((data) => onData?.(data));
 		term.onResize((size) => onResize?.(size));
+
+		// Copy-on-select (TM-4): mirror the selection to the clipboard as it's made,
+		// like MobaXterm/PuTTY. Reads the live prop so the toggle applies immediately.
+		term.onSelectionChange(() => {
+			if (!copyOnSelect || !term) return;
+			const sel = term.getSelection();
+			if (sel) void navigator.clipboard.writeText(sel);
+		});
 
 		// Follow-cd (FT-6): capture the shell's reported working directory.
 		// OSC 7 carries a file:// URI; ConEmu's OSC 9;9 carries a raw path.

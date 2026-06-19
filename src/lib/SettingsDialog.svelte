@@ -16,6 +16,7 @@
 	let scrollback = $state(init.scrollback);
 	let keepaliveSecs = $state(init.keepaliveSecs);
 	let autoReconnect = $state(init.autoReconnect);
+	let copyOnSelect = $state(init.copyOnSelect);
 	let saving = $state(false);
 	let errorMsg = $state<string | undefined>(undefined);
 
@@ -30,7 +31,8 @@
 			fontSize: Number(fontSize),
 			scrollback: Number(scrollback),
 			keepaliveSecs: Number(keepaliveSecs),
-			autoReconnect
+			autoReconnect,
+			copyOnSelect
 		};
 		try {
 			await settings.save(next);
@@ -74,6 +76,10 @@
 			<label class="grow">{i18n.t('settings.fontSize')}<input type="number" min="8" max="40" bind:value={fontSize} /></label>
 			<label class="grow">{i18n.t('settings.scrollback')}<input type="number" min="0" max="100000" step="500" bind:value={scrollback} /></label>
 		</div>
+		<label class="check">
+			<input type="checkbox" bind:checked={copyOnSelect} />
+			{i18n.t('settings.copyOnSelect')}
+		</label>
 
 		<h3>{i18n.t('settings.connection')}</h3>
 		<label>

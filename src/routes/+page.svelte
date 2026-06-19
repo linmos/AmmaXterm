@@ -77,6 +77,13 @@
 		app.init();
 		settings.init();
 		settings.load();
+
+		// The app defines no right-click menu of its own, so suppress the WebView's
+		// default context menu everywhere. The terminal attaches its own handler
+		// (copy/paste) on its container, which runs first and still works.
+		const noContextMenu = (e: MouseEvent) => e.preventDefault();
+		window.addEventListener('contextmenu', noContextMenu);
+		return () => window.removeEventListener('contextmenu', noContextMenu);
 	});
 </script>
 

@@ -11,6 +11,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Light theme** for the whole shell (not just the terminal), with a new
   "follow system" theme option that tracks the OS colour scheme live and is now
   the default.
+- **Copy-on-select** for the terminal: selecting text copies it to the clipboard
+  automatically (MobaXterm/PuTTY style). On by default; toggle in Settings.
+- **SFTP multi-select** with Ctrl/Shift click or Shift+Up/Down (arrow keys move a
+  cursor; Enter opens a folder, Esc clears) and **batch download**: select several
+  remote files and download them all into one folder in a single action.
 
 ### Planned
 - Bastion / ProxyJump (multi-hop) and the remaining per-site overrides.
