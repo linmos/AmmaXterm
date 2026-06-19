@@ -77,9 +77,6 @@
 				/>
 			</svg>
 		</button>
-		<button class="item lang" title={i18n.t('settings.language')} aria-label={i18n.t('settings.language')} onclick={() => i18n.toggle()}>
-			{i18n.locale === 'zh-TW' ? '中' : 'EN'}
-		</button>
 	</div>
 </nav>
 
@@ -133,10 +130,6 @@
 	.item:focus-visible {
 		outline: 1px solid var(--vsc-focus-border);
 		outline-offset: -1px;
-	}
-	.item.lang {
-		font: 600 12px var(--vsc-font);
-		letter-spacing: 0.5px;
 	}
 	.badge {
 		position: absolute;

@@ -119,7 +119,7 @@
 		color: var(--vsc-editor-fg);
 		font: 13px var(--vsc-font);
 		box-shadow: 0 8px 32px rgba(0, 0, 0, 0.44);
-		overflow: auto;
+		overflow: hidden auto;
 	}
 	h2 {
 		margin: 0;

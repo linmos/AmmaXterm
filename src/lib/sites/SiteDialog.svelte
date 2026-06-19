@@ -320,10 +320,10 @@
 	.dialog {
 		display: flex;
 		flex-direction: column;
-		gap: 12px;
-		width: 400px;
+		gap: 11px;
+		width: 420px;
 		max-width: 92vw;
-		max-height: 86vh;
+		max-height: 88vh;
 		box-sizing: border-box;
 		padding: 20px 22px;
 		background: var(--vsc-widget-bg);
@@ -332,7 +332,7 @@
 		color: var(--vsc-editor-fg);
 		font: 13px var(--vsc-font);
 		box-shadow: 0 8px 32px rgba(0, 0, 0, 0.44);
-		overflow: auto;
+		overflow: hidden auto;
 	}
 	h2 {
 		margin: 0 0 2px;
@@ -354,6 +354,8 @@
 		background: var(--vsc-input-bg);
 		color: var(--vsc-input-fg);
 		font: 13px var(--vsc-font);
+		box-sizing: border-box;
+		min-width: 0;
 	}
 	input:focus,
 	select:focus {

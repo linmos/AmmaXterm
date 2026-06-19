@@ -73,8 +73,11 @@
 	--vsc-radius: 5px;
 }
 
-:global(html),
-:global(body) {
+/* This is a plain CSS file imported globally — selectors are already global,
+ * so do NOT use Svelte's `:global()` here (it is invalid in a .css file and the
+ * whole rule gets dropped). */
+html,
+body {
 	margin: 0;
 	height: 100%;
 	background: var(--vsc-editor-bg);
@@ -83,18 +86,29 @@
 	-webkit-font-smoothing: antialiased;
 }
 
-/* Quiet, VS Code-style scrollbars across the app. */
-:global(*)::-webkit-scrollbar {
+/* Quiet, VS Code-style scrollbars across the app (thin, no arrow buttons). */
+*::-webkit-scrollbar {
 	width: 10px;
 	height: 10px;
 }
-:global(*)::-webkit-scrollbar-thumb {
+*::-webkit-scrollbar-track {
+	background: transparent;
+}
+*::-webkit-scrollbar-thumb {
 	background: rgba(121, 121, 121, 0.4);
+	border: 2px solid transparent;
+	background-clip: padding-box;
 	border-radius: 10px;
 }
-:global(*)::-webkit-scrollbar-thumb:hover {
-	background: rgba(100, 100, 100, 0.7);
+*::-webkit-scrollbar-thumb:hover {
+	background: rgba(150, 150, 150, 0.7);
+	background-clip: padding-box;
 }
-:global(*)::-webkit-scrollbar-corner {
+*::-webkit-scrollbar-button {
+	display: none;
+	width: 0;
+	height: 0;
+}
+*::-webkit-scrollbar-corner {
 	background: transparent;
 }
