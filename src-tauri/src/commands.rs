@@ -15,6 +15,7 @@ use crate::ssh::{AuthCredential, ConnectOptions, ConnectRequest, HostKeyPrompts}
 use crate::store::{AuthMethod, Site, SiteInput, SiteStore};
 use crate::transfer::{TransferInfo, TransferManager};
 use crate::tunnel::{TunnelInfo, TunnelManager, TunnelSpec};
+use crate::vault::{Vault, VaultState};
 
 /// Resolve (and ensure) the app config directory.
 fn config_dir(app: &AppHandle) -> AppResult<std::path::PathBuf> {
@@ -372,6 +373,87 @@ pub fn tunnel_close(id: String, tunnels: State<'_, TunnelManager>) {
 #[tauri::command]
 pub fn tunnel_list(tunnels: State<'_, TunnelManager>) -> Vec<TunnelInfo> {
     tunnels.list()
+}
+
+// --- Encrypted local vault (AK-4) ---
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VaultStatus {
+    exists: bool,
+    unlocked: bool,
+}
+
+fn vault_path(app: &AppHandle) -> AppResult<std::path::PathBuf> {
+    Ok(config_dir(app)?.join("vault.json"))
+}
+
+/// Whether the vault file exists and whether it is currently unlocked.
+#[tauri::command]
+pub fn vault_status(app: AppHandle, state: State<'_, VaultState>) -> AppResult<VaultStatus> {
+    Ok(VaultStatus {
+        exists: Vault::exists(&vault_path(&app)?),
+        unlocked: state.0.lock().unwrap().is_some(),
+    })
+}
+
+/// Unlock the vault (creating it on first use), keeping it open for the session.
+#[tauri::command]
+pub fn vault_unlock(
+    app: AppHandle,
+    master_password: String,
+    state: State<'_, VaultState>,
+) -> AppResult<()> {
+    let path = vault_path(&app)?;
+    let vault = if Vault::exists(&path) {
+        Vault::unlock(path, &master_password)?
+    } else {
+        Vault::create(path, &master_password)?
+    };
+    *state.0.lock().unwrap() = Some(vault);
+    Ok(())
+}
+
+/// Lock the vault, dropping the decrypted secrets from memory.
+#[tauri::command]
+pub fn vault_lock(state: State<'_, VaultState>) {
+    *state.0.lock().unwrap() = None;
+}
+
+#[tauri::command]
+pub fn vault_set_secret(key: String, value: String, state: State<'_, VaultState>) -> AppResult<()> {
+    let mut guard = state.0.lock().unwrap();
+    let vault = guard
+        .as_mut()
+        .ok_or_else(|| AppError::Other("vault is locked".into()))?;
+    vault.set(&key, &value)
+}
+
+#[tauri::command]
+pub fn vault_get_secret(key: String, state: State<'_, VaultState>) -> AppResult<Option<String>> {
+    let guard = state.0.lock().unwrap();
+    let vault = guard
+        .as_ref()
+        .ok_or_else(|| AppError::Other("vault is locked".into()))?;
+    Ok(vault.get(&key))
+}
+
+#[tauri::command]
+pub fn vault_delete_secret(key: String, state: State<'_, VaultState>) -> AppResult<()> {
+    let mut guard = state.0.lock().unwrap();
+    let vault = guard
+        .as_mut()
+        .ok_or_else(|| AppError::Other("vault is locked".into()))?;
+    vault.delete(&key)
+}
+
+#[tauri::command]
+pub fn vault_keys(state: State<'_, VaultState>) -> AppResult<Vec<String>> {
+    let guard = state.0.lock().unwrap();
+    let vault = guard
+        .as_ref()
+        .ok_or_else(|| AppError::Other("vault is locked".into()))?;
+    Ok(vault.keys())
 }
 
 // --- Key generation (AK-3) ---

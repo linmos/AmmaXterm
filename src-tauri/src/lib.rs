@@ -10,6 +10,7 @@ mod ssh;
 mod store;
 mod transfer;
 mod tunnel;
+mod vault;
 
 use session::SessionManager;
 use settings::SettingsStore;
@@ -17,6 +18,7 @@ use store::SiteStore;
 use tauri::Manager;
 use transfer::TransferManager;
 use tunnel::TunnelManager;
+use vault::VaultState;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -26,6 +28,7 @@ pub fn run() {
         .manage(SessionManager::new())
         .manage(TunnelManager::new())
         .manage(TransferManager::new())
+        .manage(VaultState::default())
         .manage(ssh::HostKeyPrompts::default())
         .setup(|app| {
             // Sites + settings live under the app config dir.
@@ -73,6 +76,13 @@ pub fn run() {
             commands::local_list,
             commands::keygen_generate,
             commands::keygen_save,
+            commands::vault_status,
+            commands::vault_unlock,
+            commands::vault_lock,
+            commands::vault_set_secret,
+            commands::vault_get_secret,
+            commands::vault_delete_secret,
+            commands::vault_keys,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

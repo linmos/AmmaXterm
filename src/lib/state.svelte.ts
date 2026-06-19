@@ -208,6 +208,27 @@ class AppState {
 		await invoke('keygen_save', { privatePath, privateKey, publicKey });
 	}
 
+	// --- encrypted vault (AK-4) ---
+
+	async vaultStatus(): Promise<{ exists: boolean; unlocked: boolean }> {
+		return invoke('vault_status');
+	}
+	async vaultUnlock(masterPassword: string): Promise<void> {
+		await invoke('vault_unlock', { masterPassword });
+	}
+	async vaultLock(): Promise<void> {
+		await invoke('vault_lock');
+	}
+	async vaultSetSecret(key: string, value: string): Promise<void> {
+		await invoke('vault_set_secret', { key, value });
+	}
+	async vaultDeleteSecret(key: string): Promise<void> {
+		await invoke('vault_delete_secret', { key });
+	}
+	async vaultKeys(): Promise<string[]> {
+		return invoke('vault_keys');
+	}
+
 	/** Move a site into a group (or out of all groups when `group` is null).
 	 *  Rewrites the site record only — the stored secret is untouched. */
 	async moveSiteToGroup(site: Site, group: string | null): Promise<void> {
