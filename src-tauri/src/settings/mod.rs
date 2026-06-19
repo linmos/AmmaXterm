@@ -12,7 +12,7 @@ use crate::error::{AppError, AppResult};
 const SCHEMA_VERSION: u32 = 1;
 
 fn default_theme() -> String {
-    "dark".to_string()
+    "system".to_string()
 }
 fn default_font_family() -> String {
     "Consolas, \"Cascadia Mono\", \"DejaVu Sans Mono\", monospace".to_string()
@@ -33,7 +33,7 @@ fn default_keepalive() -> u32 {
 pub struct Settings {
     #[serde(default = "default_schema")]
     pub schema_version: u32,
-    /// Named theme preset resolved to colors on the frontend ("dark" | "light").
+    /// Named theme preset resolved to colors on the frontend ("system" | "dark" | "light").
     #[serde(default = "default_theme")]
     pub theme: String,
     #[serde(default = "default_font_family")]

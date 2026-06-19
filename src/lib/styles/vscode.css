@@ -73,6 +73,74 @@
 	--vsc-radius: 5px;
 }
 
+/* "Light+" overrides — applied when the resolved theme is light. The root
+ * `data-theme` attribute is set by AppSettings (settings.svelte.ts) from the
+ * user's choice / OS preference; only colour tokens change, fonts/radius stay. */
+:root[data-theme="light"] {
+	/* Window chrome */
+	--vsc-activitybar-bg: #f3f3f3;
+	--vsc-activitybar-fg: #424242;
+	--vsc-activitybar-inactive: #919191;
+	--vsc-activitybar-active-border: #005fb8;
+	--vsc-activitybar-badge-bg: #007acc;
+
+	--vsc-sidebar-bg: #f3f3f3;
+	--vsc-sidebar-fg: #3b3b3b;
+	--vsc-sidebar-title-fg: #6f6f6f;
+	--vsc-sidebar-section-bg: #f3f3f3;
+
+	--vsc-editor-bg: #ffffff;
+	--vsc-editor-fg: #3b3b3b;
+
+	/* Editor tabs */
+	--vsc-tab-active-bg: #ffffff;
+	--vsc-tab-inactive-bg: #ececec;
+	--vsc-tab-active-fg: #333333;
+	--vsc-tab-inactive-fg: #6f6f6f;
+	--vsc-tab-border: #e4e4e4;
+	--vsc-tab-active-top: #005fb8;
+	--vsc-tabbar-bg: #f3f3f3;
+
+	/* Status bar */
+	--vsc-statusbar-bg: #005fb8;
+	--vsc-statusbar-fg: #ffffff;
+	--vsc-statusbar-hover: #1f72c2;
+
+	/* Controls */
+	--vsc-focus-border: #005fb8;
+	--vsc-button-bg: #005fb8;
+	--vsc-button-hover: #0258a8;
+	--vsc-button-fg: #ffffff;
+	--vsc-button-secondary-bg: #e7e7e7;
+	--vsc-button-secondary-hover: #dcdcdc;
+	--vsc-button-secondary-fg: #3b3b3b;
+	--vsc-input-bg: #ffffff;
+	--vsc-input-fg: #3b3b3b;
+	--vsc-input-border: #cecece;
+	--vsc-input-placeholder: #767676;
+
+	/* Lists */
+	--vsc-list-hover-bg: #e8e8e8;
+	--vsc-list-active-bg: #d6ebff;
+	--vsc-list-inactive-bg: #e4e6f1;
+	--vsc-list-fg: #3b3b3b;
+
+	/* Surfaces */
+	--vsc-border: #e0e0e0;
+	--vsc-panel-border: #dcdcdc;
+	--vsc-widget-bg: #f3f3f3;
+	--vsc-widget-border: #c8c8c8;
+	--vsc-widget-shadow: rgba(0, 0, 0, 0.16);
+	--vsc-badge-bg: #c4c4c4;
+	--vsc-badge-fg: #333333;
+
+	/* Semantic */
+	--vsc-green: #2ea043;
+	--vsc-yellow: #bf8803;
+	--vsc-red: #cd3131;
+	--vsc-muted: #6f6f6f;
+}
+
 /* This is a plain CSS file imported globally — selectors are already global,
  * so do NOT use Svelte's `:global()` here (it is invalid in a .css file and the
  * whole rule gets dropped). */

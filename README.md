@@ -18,8 +18,8 @@ does them well:
 
 - **SSH terminal** — SSH 2.0 with password / public-key / keyboard-interactive
   auth, multi-tab sessions, true color, UTF-8, mandatory host-key verification,
-  in-terminal search, themes & fonts, keepalive + auto-reconnect, and session
-  logging.
+  in-terminal search, light / dark themes (follow-system by default) & fonts,
+  keepalive + auto-reconnect, and session logging.
 - **SFTP file transfer** — browse with filter/sort, a transfer queue (progress,
   speed, pause/resume, auto-retry), drag-and-drop upload, dual-pane (local ⇆
   remote), `chmod`, follow-terminal-cd, and large-directory virtualization.

@@ -75,6 +75,7 @@
 
 	onMount(() => {
 		app.init();
+		settings.init();
 		settings.load();
 	});
 </script>
