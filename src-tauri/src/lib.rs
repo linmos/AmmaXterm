@@ -3,11 +3,13 @@ mod error;
 mod importer;
 mod secrets;
 mod session;
+mod settings;
 mod sftp;
 mod ssh;
 mod store;
 
 use session::SessionManager;
+use settings::SettingsStore;
 use store::SiteStore;
 use tauri::Manager;
 
@@ -19,9 +21,10 @@ pub fn run() {
         .manage(SessionManager::new())
         .manage(ssh::HostKeyPrompts::default())
         .setup(|app| {
-            // Sites live in sites.json under the app config dir.
+            // Sites + settings live under the app config dir.
             let config_dir = app.path().app_config_dir()?;
             app.manage(SiteStore::load(config_dir.join("sites.json")));
+            app.manage(SettingsStore::load(config_dir.join("settings.json")));
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -46,6 +49,8 @@ pub fn run() {
             commands::import_ssh_config,
             commands::import_sites_backup,
             commands::export_sites,
+            commands::settings_get,
+            commands::settings_set,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

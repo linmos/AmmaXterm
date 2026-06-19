@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { app } from '$lib/state.svelte';
 	import { i18n } from '$lib/i18n.svelte';
+	import { settings } from '$lib/settings.svelte';
 	import Terminal from '$lib/terminal/Terminal.svelte';
 </script>
 
@@ -27,6 +28,10 @@
 						onReady={(api) => app.setTabApi(tab.key, api)}
 						onData={(data) => app.sendInput(tab.key, data)}
 						onResize={(size) => app.resizeTab(tab.key, size)}
+						fontSize={settings.s.fontSize}
+						fontFamily={settings.s.fontFamily}
+						scrollback={settings.s.scrollback}
+						theme={settings.theme}
 					/>
 					{#if tab.status === 'closed'}
 						<div class="badge">{i18n.t('tabs.closed')}</div>

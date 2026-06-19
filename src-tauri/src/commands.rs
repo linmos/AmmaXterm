@@ -9,6 +9,7 @@ use crate::error::{AppError, AppResult};
 use crate::importer::{self, ImportedSite};
 use crate::secrets::{self, SecretKind};
 use crate::session::SessionManager;
+use crate::settings::{Settings, SettingsStore};
 use crate::sftp::FileEntry;
 use crate::ssh::{AuthCredential, ConnectOptions, ConnectRequest, HostKeyPrompts};
 use crate::store::{AuthMethod, Site, SiteInput, SiteStore};
@@ -274,4 +275,18 @@ pub fn import_sites_backup(path: String) -> AppResult<Vec<ImportedSite>> {
 #[tauri::command]
 pub fn export_sites(path: String, store: State<'_, SiteStore>) -> AppResult<()> {
     store.export_to(std::path::Path::new(&path))
+}
+
+// --- Settings (TM-11, ST-1, ST-2) ---
+
+/// Read the global settings.
+#[tauri::command]
+pub fn settings_get(settings: State<'_, SettingsStore>) -> Settings {
+    settings.get()
+}
+
+/// Replace the global settings; returns the persisted value.
+#[tauri::command]
+pub fn settings_set(value: Settings, settings: State<'_, SettingsStore>) -> AppResult<Settings> {
+    settings.set(value)
 }

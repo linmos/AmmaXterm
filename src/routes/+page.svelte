@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { app } from '$lib/state.svelte';
+	import { settings } from '$lib/settings.svelte';
 	import SiteSidebar from '$lib/sites/SiteSidebar.svelte';
 	import TerminalTabs from '$lib/session/TerminalTabs.svelte';
 	import SftpPanel from '$lib/sftp/SftpPanel.svelte';
@@ -11,6 +12,7 @@
 
 	onMount(() => {
 		app.init();
+		settings.load();
 	});
 
 	const activeSession = $derived(app.activeTab?.sessionId);
