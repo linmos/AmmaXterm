@@ -7,6 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Planned
+- Bastion / ProxyJump (multi-hop) and the remaining per-site overrides.
+- PuTTY session import.
+
+## [0.2.0] - 2026-06-19
+
+M2 (v1.0 feature set). "Session" = a saved connection in the UI.
+
+### Added
+- **Site management:** groups/folders with drag-to-reorder, live search over
+  name/host/user/group/tags, `user@host:port` quick-connect, import from an
+  OpenSSH `config`, and export/backup (no secrets written).
+- **Terminal:** in-terminal search (Ctrl+Shift+F), theme / font / scrollback
+  settings with global defaults, SSH keepalive with manual & auto reconnect,
+  and per-session output logging to a file.
+- **SFTP:** a transfer queue with progress, speed, pause/resume, cancel and
+  auto-retry (resumable transfers); drag-and-drop upload; dual-pane (local ⇆
+  remote); `chmod` with owner/permission display; filter & sort; follow the
+  terminal's working directory; and large-directory virtualization.
+- **Port forwarding:** Local `-L`, dynamic SOCKS5 `-D`, and Remote `-R` with a
+  live tunnel-management panel; tunnels can be saved per site and auto-started.
+- **Keys & secrets:** an Ed25519 / RSA key generator (copy public key, save the
+  pair) and an AES-256-GCM + Argon2id master-key-encrypted local vault.
+- Window size, position and maximized state are remembered across launches; a
+  private-key path can be picked with a file browser.
+
+### Security
+- **PF-7:** local forward listeners bind `127.0.0.1`, never `0.0.0.0`; remote
+  (`-R`) LAN exposure is off by default and warned about when enabled.
+
+## [0.1.0] - 2026-06-19
+
 ### Added
 - Project scaffolding: Tauri v2 + SvelteKit (Svelte 5) + TypeScript.
 - Repository governance: LICENSE (MIT), README, CONTRIBUTING, CODE_OF_CONDUCT,
