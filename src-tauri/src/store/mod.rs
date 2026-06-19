@@ -46,7 +46,13 @@ pub enum AuthMethod {
     #[default]
     Password,
     /// Public-key auth using a private key file (passphrase from the keychain).
-    PublicKey { key_path: String },
+    /// The enum's `rename_all` only renames variants, not struct-variant fields,
+    /// so name the JSON field explicitly to match the camelCase frontend (and
+    /// accept the legacy `key_path` spelling from older files).
+    PublicKey {
+        #[serde(rename = "keyPath", alias = "key_path")]
+        key_path: String,
+    },
     /// Keyboard-interactive.
     KeyboardInteractive,
     /// SSH agent.
