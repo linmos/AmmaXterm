@@ -329,6 +329,17 @@ pub fn site_delete(
     Ok(())
 }
 
+/// Copy a site's stored secrets (password + passphrase) to another site.
+/// Used when duplicating a saved site so the clone keeps its credentials.
+#[tauri::command]
+pub fn site_copy_secrets(
+    from_id: String,
+    to_id: String,
+    vault: State<'_, VaultState>,
+) -> AppResult<()> {
+    secrets::copy_all_pref(&from_id, &to_id, vault.inner())
+}
+
 // --- Secrets (AK-1; vault fallback AK-4) ---
 
 /// Store/replace a site's password (OS keychain, or the vault as fallback).

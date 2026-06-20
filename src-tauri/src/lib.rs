@@ -58,6 +58,7 @@ pub fn run() {
             commands::site_add,
             commands::site_update,
             commands::site_delete,
+            commands::site_copy_secrets,
             commands::site_set_password,
             commands::site_set_passphrase,
             commands::import_ssh_config,

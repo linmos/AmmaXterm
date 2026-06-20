@@ -71,6 +71,9 @@ class AppState {
 		await this.loadSites();
 		await listen<string>('ssh://closed', (event) => {
 			const tab = this.tabs.find((t) => t.sessionId === event.payload);
+			// The backend tears down this session's tunnels when it closes; reflect
+			// that so the activity-bar badge doesn't keep counting dead tunnels.
+			void this.refreshTunnels();
 			if (tab && tab.status === 'connected') {
 				tab.status = 'closed';
 				tab.logging = false;
@@ -117,6 +120,27 @@ class AppState {
 	async deleteSite(id: string): Promise<void> {
 		await invoke('site_delete', { id });
 		await this.loadSites();
+	}
+
+	/** Clone a saved site as a new record, copying its stored password/passphrase
+	 *  to the clone. Returns the newly created site. */
+	async duplicateSite(site: Site, name: string): Promise<Site> {
+		const input: SiteInput = {
+			name,
+			host: site.host,
+			port: site.port,
+			username: site.username,
+			auth: site.auth,
+			group: site.group,
+			tags: [...site.tags],
+			tunnels: site.tunnels.map((t) => ({ ...t })),
+			proxyJump: [...site.proxyJump],
+			overrides: site.overrides ? { ...site.overrides } : null
+		};
+		const clone = await invoke<Site>('site_add', { input });
+		await invoke('site_copy_secrets', { fromId: site.id, toId: clone.id }).catch(() => {});
+		await this.loadSites();
+		return clone;
 	}
 
 	// --- tunnels / port forwarding (PF-1..PF-7) ---
@@ -415,7 +439,12 @@ class AppState {
 		const idx = this.tabs.findIndex((t) => t.key === key);
 		if (idx === -1) return;
 		const tab = this.tabs[idx];
-		if (tab.sessionId) await invoke('ssh_disconnect', { id: tab.sessionId }).catch(() => {});
+		if (tab.sessionId) {
+			await invoke('ssh_disconnect', { id: tab.sessionId }).catch(() => {});
+			// `ssh_disconnect` closed this session's tunnels backend-side — sync the
+			// list so the activity-bar badge drops them.
+			void this.refreshTunnels();
+		}
 		tab.api?.dispose();
 		this.tabs.splice(idx, 1);
 		if (this.activeKey === key) {

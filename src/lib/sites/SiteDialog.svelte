@@ -334,7 +334,7 @@
 		display: flex;
 		flex-direction: column;
 		gap: 11px;
-		width: 420px;
+		width: 520px;
 		max-width: 92vw;
 		max-height: 88vh;
 		box-sizing: border-box;

@@ -102,6 +102,18 @@ pub fn get_pref(kind: SecretKind, site_id: &str, vault: &VaultState) -> AppResul
         .and_then(|v| v.get(&vault_key(kind, site_id))))
 }
 
+/// Copy every secret from one site to another (keychain-preferred, vault
+/// fallback). Used when duplicating a site so the clone keeps its credentials.
+/// Best-effort per kind: a missing source secret is simply skipped.
+pub fn copy_all_pref(from: &str, to: &str, vault: &VaultState) -> AppResult<()> {
+    for kind in [SecretKind::Password, SecretKind::Passphrase] {
+        if let Some(value) = get_pref(kind, from, vault)? {
+            set_pref(kind, to, &value, vault)?;
+        }
+    }
+    Ok(())
+}
+
 /// Remove every secret for a site from both the keychain and the vault
 /// (best-effort; called when a site is deleted).
 pub fn delete_all_pref(site_id: &str, vault: &VaultState) -> AppResult<()> {

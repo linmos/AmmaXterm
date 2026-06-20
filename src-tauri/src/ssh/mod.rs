@@ -16,7 +16,7 @@ use russh::keys::ssh_key;
 use russh::ChannelMsg;
 use serde::Serialize;
 use tauri::ipc::Channel;
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager};
 use tokio::sync::{mpsc, oneshot};
 
 use crate::error::{AppError, AppResult};
@@ -567,6 +567,11 @@ pub(crate) async fn run_session(
     if let Some(mut w) = log.take() {
         let _ = w.flush();
     }
+    // Tear down this session's tunnels too — otherwise an unexpected drop (or the
+    // remote shell exiting) leaves them lingering in the manager and counted in
+    // the UI badge (only the explicit `ssh_disconnect` path cleaned them up).
+    app.state::<crate::tunnel::TunnelManager>()
+        .close_for_session(&id);
     let _ = app.emit("ssh://closed", &id);
 }
 
