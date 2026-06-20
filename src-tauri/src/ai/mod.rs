@@ -207,6 +207,73 @@ impl AiManager {
         }
         Ok(())
     }
+
+    /// Fetch the available model ids for a provider (AI-5, P3).
+    pub async fn list_models(&self, cfg: ProviderConfig) -> AppResult<Vec<String>> {
+        let provider = cfg.provider.as_str();
+        let (url, kind) = if provider == "ollama" {
+            // Ollama lists models at the host root (/api/tags), not under /v1.
+            let host = if cfg.base_url.is_empty() {
+                "http://localhost:11434".to_string()
+            } else {
+                let b = cfg.base_url.trim_end_matches('/');
+                b.strip_suffix("/v1").unwrap_or(b).to_string()
+            };
+            (format!("{host}/api/tags"), ModelList::Ollama)
+        } else if provider == "claude" {
+            let base = if cfg.base_url.is_empty() {
+                "https://api.anthropic.com"
+            } else {
+                cfg.base_url.trim_end_matches('/')
+            };
+            (format!("{base}/v1/models"), ModelList::OpenAiData)
+        } else {
+            let base = if cfg.base_url.is_empty() {
+                "https://api.openai.com/v1"
+            } else {
+                cfg.base_url.trim_end_matches('/')
+            };
+            (format!("{base}/models"), ModelList::OpenAiData)
+        };
+
+        let mut req = self.client.get(&url);
+        if provider == "claude" {
+            let key = cfg
+                .api_key
+                .as_deref()
+                .ok_or_else(|| AppError::Auth("AI API key not set".into()))?;
+            req = req
+                .header("x-api-key", key)
+                .header("anthropic-version", "2023-06-01");
+        } else if provider != "ollama" {
+            let key = cfg
+                .api_key
+                .as_deref()
+                .ok_or_else(|| AppError::Auth("AI API key not set".into()))?;
+            req = req.header("authorization", format!("Bearer {key}"));
+        }
+
+        let resp = req
+            .send()
+            .await
+            .map_err(|e| AppError::Other(format!("AI request failed: {e}")))?;
+        if !resp.status().is_success() {
+            let status = resp.status();
+            let text = resp.text().await.unwrap_or_default();
+            return Err(AppError::Other(format!(
+                "AI provider error ({status}): {}",
+                truncate(text.trim(), 300)
+            )));
+        }
+        let v: Value = resp
+            .json()
+            .await
+            .map_err(|e| AppError::Other(format!("AI response parse error: {e}")))?;
+        let mut models = parse_models(kind, &v);
+        models.sort();
+        models.dedup();
+        Ok(models)
+    }
 }
 
 /// Build the endpoint URL and JSON body for a provider/request.
@@ -340,6 +407,33 @@ fn parse_delta(wire: Wire, data: &str) -> Delta {
     }
 }
 
+/// Shape of a model-listing response.
+#[derive(Clone, Copy)]
+enum ModelList {
+    /// `{ "data": [ { "id": "..." }, ... ] }` (Anthropic + OpenAI).
+    OpenAiData,
+    /// `{ "models": [ { "name": "..." }, ... ] }` (Ollama /api/tags).
+    Ollama,
+}
+
+/// Extract model ids from a listing response.
+fn parse_models(kind: ModelList, v: &Value) -> Vec<String> {
+    let (array, field) = match kind {
+        ModelList::OpenAiData => (v.get("data"), "id"),
+        ModelList::Ollama => (v.get("models"), "name"),
+    };
+    array
+        .and_then(Value::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(|m| m.get(field).and_then(Value::as_str))
+                .map(str::to_string)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 /// Best-effort scrub of obvious secrets before text leaves the process (AI-N4).
 /// Not a guarantee — the UI must say so.
 pub fn redact(text: &str) -> String {
@@ -365,6 +459,21 @@ pub fn redact(text: &str) -> String {
     out.join("\n")
 }
 
+/// Known high-signal secret token prefixes (provider keys / tokens).
+const TOKEN_PREFIXES: [&str; 11] = [
+    "sk-",
+    "ghp_",
+    "gho_",
+    "ghs_",
+    "ghu_",
+    "github_pat_",
+    "xoxb-",
+    "xoxp-",
+    "AKIA",
+    "ASIA",
+    "AIza",
+];
+
 fn redact_line(line: &str, keys: &[&str]) -> String {
     let lower = line.to_lowercase();
     if keys.iter().any(|k| lower.contains(k)) {
@@ -374,6 +483,21 @@ fn redact_line(line: &str, keys: &[&str]) -> String {
     }
     if let Some(idx) = line.find("Bearer ") {
         return format!("{}[REDACTED]", &line[..idx + "Bearer ".len()]);
+    }
+    // Scrub bare provider tokens (e.g. `sk-…`, `ghp_…`, `AKIA…`). Only rewrites
+    // lines that contain a known prefix; spacing is normalized on those only.
+    if TOKEN_PREFIXES.iter().any(|p| line.contains(p)) {
+        return line
+            .split_whitespace()
+            .map(|tok| {
+                if tok.len() >= 12 && TOKEN_PREFIXES.iter().any(|p| tok.starts_with(p)) {
+                    "[REDACTED]"
+                } else {
+                    tok
+                }
+            })
+            .collect::<Vec<_>>()
+            .join(" ");
     }
     line.to_string()
 }
@@ -496,5 +620,35 @@ mod tests {
         let (url, body) = build_request(&cfg, Wire::OpenAi, &[], &None);
         assert_eq!(url, "http://localhost:11434/v1/chat/completions");
         assert_eq!(body["model"], json!("llama3.1"));
+    }
+
+    #[test]
+    fn parse_models_openai_and_ollama() {
+        let openai = serde_json::json!({
+            "data": [{ "id": "gpt-4o" }, { "id": "gpt-4o-mini" }]
+        });
+        assert_eq!(
+            parse_models(ModelList::OpenAiData, &openai),
+            vec!["gpt-4o".to_string(), "gpt-4o-mini".to_string()]
+        );
+        let ollama = serde_json::json!({
+            "models": [{ "name": "llama3.1:latest" }, { "name": "qwen2.5:7b" }]
+        });
+        assert_eq!(
+            parse_models(ModelList::Ollama, &ollama),
+            vec!["llama3.1:latest".to_string(), "qwen2.5:7b".to_string()]
+        );
+        // Missing/empty arrays degrade gracefully.
+        assert!(parse_models(ModelList::OpenAiData, &serde_json::json!({})).is_empty());
+    }
+
+    #[test]
+    fn redact_scrubs_bare_tokens() {
+        let out = redact("found AKIAIOSFODNN7EXAMPLE and ghp_0123456789abcdef in logs");
+        assert!(!out.contains("AKIAIOSFODNN7EXAMPLE"));
+        assert!(!out.contains("ghp_0123456789abcdef"));
+        assert!(out.contains("[REDACTED]"));
+        assert!(out.contains("found"));
+        assert!(out.contains("in logs"));
     }
 }

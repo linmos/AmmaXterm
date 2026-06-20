@@ -786,3 +786,31 @@ pub fn ai_set_api_key(
 pub fn ai_has_api_key(provider: String, vault: State<'_, VaultState>) -> AppResult<bool> {
     Ok(secrets::get_pref(SecretKind::ApiKey, &provider, vault.inner())?.is_some())
 }
+
+/// List the models available for a provider (AI-5, P3).
+#[tauri::command]
+pub async fn ai_list_models(
+    provider: String,
+    ai: State<'_, AiManager>,
+    settings: State<'_, SettingsStore>,
+    vault: State<'_, VaultState>,
+) -> AppResult<Vec<String>> {
+    let s = settings.get();
+    let api_key = if provider == "ollama" {
+        None
+    } else {
+        let key = secrets::get_pref(SecretKind::ApiKey, &provider, vault.inner())?;
+        if key.is_none() {
+            return Err(AppError::Auth("no API key set for this AI provider".into()));
+        }
+        key
+    };
+    let cfg = ProviderConfig {
+        provider,
+        model: String::new(),
+        base_url: s.ai_base_url,
+        api_key,
+        max_tokens: s.ai_max_tokens,
+    };
+    ai.list_models(cfg).await
+}

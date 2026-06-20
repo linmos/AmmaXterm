@@ -313,6 +313,11 @@ class AppState {
 		return invoke<boolean>('ai_has_api_key', { provider });
 	}
 
+	/** List the models available for a provider. */
+	async aiListModels(provider: string): Promise<string[]> {
+		return invoke<string[]>('ai_list_models', { provider });
+	}
+
 	/** Move a site into a group (or out of all groups when `group` is null).
 	 *  Rewrites the site record only — the stored secret is untouched. */
 	async moveSiteToGroup(site: Site, group: string | null): Promise<void> {

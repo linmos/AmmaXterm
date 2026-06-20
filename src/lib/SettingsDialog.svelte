@@ -29,6 +29,8 @@
 	// API key is never pre-filled; blank on save = keep the stored key.
 	let aiApiKey = $state('');
 	let aiHasKey = $state(false);
+	let aiModels = $state<string[]>([]);
+	let aiModelsBusy = $state(false);
 	let saving = $state(false);
 	let errorMsg = $state<string | undefined>(undefined);
 
@@ -38,9 +40,11 @@
 		ollama: 'llama3.1'
 	};
 
-	// Reflect whether the selected provider already has a stored key.
+	// Reflect whether the selected provider already has a stored key, and drop a
+	// stale model list when the provider changes.
 	$effect(() => {
 		const provider = aiProvider;
+		aiModels = [];
 		if (provider === 'ollama') {
 			aiHasKey = true;
 			return;
@@ -50,6 +54,19 @@
 			.then((v) => (aiHasKey = v))
 			.catch(() => (aiHasKey = false));
 	});
+
+	// Fetch the provider's model list to populate the datalist (AI-5, P3).
+	async function loadModels() {
+		aiModelsBusy = true;
+		errorMsg = undefined;
+		try {
+			aiModels = await app.aiListModels(aiProvider);
+		} catch (err) {
+			errorMsg = (err as { message?: string })?.message ?? String(err);
+		} finally {
+			aiModelsBusy = false;
+		}
+	}
 
 	async function save(event: Event) {
 		event.preventDefault();
@@ -139,20 +156,26 @@
 			{i18n.t('settings.aiEnabled')}
 		</label>
 		{#if aiEnabled}
-			<div class="row">
-				<label class="grow">
-					{i18n.t('ai.provider')}
-					<select bind:value={aiProvider}>
-						<option value="claude">Claude (Anthropic)</option>
-						<option value="openai">OpenAI / compatible</option>
-						<option value="ollama">Ollama (local)</option>
-					</select>
-				</label>
-				<label class="grow">
+			<label>
+				{i18n.t('ai.provider')}
+				<select bind:value={aiProvider}>
+					<option value="claude">Claude (Anthropic)</option>
+					<option value="openai">OpenAI / compatible</option>
+					<option value="ollama">Ollama (local)</option>
+				</select>
+			</label>
+			<label>
+				<span class="rowlabel">
 					{i18n.t('ai.model')}
-					<input bind:value={aiModel} placeholder={MODEL_PLACEHOLDER[aiProvider]} />
-				</label>
-			</div>
+					<button type="button" class="link" onclick={loadModels} disabled={aiModelsBusy}>
+						{aiModelsBusy ? i18n.t('ai.loadingModels') : i18n.t('ai.loadModels')}
+					</button>
+				</span>
+				<input bind:value={aiModel} list="ai-models" placeholder={MODEL_PLACEHOLDER[aiProvider]} />
+				<datalist id="ai-models">
+					{#each aiModels as m (m)}<option value={m}></option>{/each}
+				</datalist>
+			</label>
 			{#if aiProvider !== 'ollama'}
 				<label>
 					{i18n.t('settings.aiApiKey')}
@@ -267,6 +290,29 @@
 	}
 	.hint {
 		color: var(--vsc-muted);
+	}
+	.rowlabel {
+		display: flex;
+		align-items: baseline;
+		justify-content: space-between;
+		gap: 8px;
+	}
+	.link {
+		width: auto;
+		padding: 0;
+		border: none;
+		background: none;
+		color: var(--vsc-focus-border);
+		font: 11px var(--vsc-font);
+		cursor: pointer;
+	}
+	.link:hover:not(:disabled) {
+		background: none;
+		text-decoration: underline;
+	}
+	.link:disabled {
+		opacity: 0.5;
+		cursor: default;
 	}
 	.actions {
 		display: flex;

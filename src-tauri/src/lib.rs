@@ -96,6 +96,7 @@ pub fn run() {
             commands::ai_cancel,
             commands::ai_set_api_key,
             commands::ai_has_api_key,
+            commands::ai_list_models,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

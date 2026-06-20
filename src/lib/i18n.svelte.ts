@@ -126,6 +126,8 @@ const en: Messages = {
 	'ai.noSession': 'Open a terminal session first.',
 	'ai.provider': 'Provider',
 	'ai.model': 'Model',
+	'ai.loadModels': 'Load models',
+	'ai.loadingModels': 'Loading…',
 	'ai.privacyNote':
 		'Suggestions are filled into the prompt, never run automatically — review and press Enter.',
 	'tabs.reconnect': 'Reconnect',
@@ -362,6 +364,8 @@ const zhTW: Messages = {
 	'ai.noSession': '請先開啟一個終端機工作階段。',
 	'ai.provider': '供應商',
 	'ai.model': '模型',
+	'ai.loadModels': '載入模型',
+	'ai.loadingModels': '載入中…',
 	'ai.privacyNote': '建議只會填入輸入列、不會自動執行 — 請檢視後自行按 Enter。',
 	'tabs.reconnect': '重新連線',
 	'tabs.startLog': '記錄到檔案…',
