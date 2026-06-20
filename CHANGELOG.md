@@ -11,6 +11,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Bastion / ProxyJump (multi-hop) and the remaining per-site overrides.
 - PuTTY session import.
 
+## [0.3.2] - 2026-06-20
+
+### Added
+- **About dialog** (info button in the activity bar) showing the app version,
+  Tauri version, license, and a link to the GitHub repository.
+
 ## [0.3.1] - 2026-06-20
 
 ### Added

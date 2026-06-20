@@ -1,6 +1,6 @@
 [package]
 name = "ammaxterm"
-version = "0.3.1"
+version = "0.3.2"
 description = "AmmaXterm — lightweight open-source SSH terminal"
 authors = ["AmmaXterm contributors"]
 edition = "2021"
