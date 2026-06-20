@@ -11,3 +11,6 @@ vite.config.ts.timestamp-*
 
 # Local-only contributor/agent guide; not tracked.
 CLAUDE.md
+
+# Internal design docs (PRD / plan / spike notes); not tracked.
+/docs/
