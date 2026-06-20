@@ -1,18 +1,22 @@
-<div align="center">
+<h1 align="center">AmmaXterm</h1>
 
-# AmmaXterm
+<p align="center">
+  <b>A lightweight, open-source SSH terminal for everyone.</b><br>
+  SSH, SFTP file transfer, saved sessions, and port forwarding — fast, simple, and secure.
+</p>
 
-**A lightweight, open-source SSH terminal for everyone.**
-SSH, SFTP file transfer, saved sessions, and port forwarding — fast, simple, and secure.
+<p align="center">
+  <b>輕量、開源的 SSH 終端工具,人人都能上手。</b><br>
+  SSH 連線、SFTP 傳檔、工作階段管理與連接埠轉發 —— 快速、簡單、安全。
+</p>
 
-**輕量、開源的 SSH 終端工具,人人都能上手。**
-SSH 連線、SFTP 傳檔、工作階段管理與連接埠轉發 —— 快速、簡單、安全。
+<p align="center">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT"></a>
+  <img src="https://img.shields.io/badge/platforms-Windows%20%7C%20macOS%20%7C%20Linux-blue" alt="Platforms">
+  <img src="https://img.shields.io/badge/status-active%20development-brightgreen" alt="Status">
+</p>
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-![Platforms](https://img.shields.io/badge/platforms-Windows%20%7C%20macOS%20%7C%20Linux-blue)
-![Status](https://img.shields.io/badge/status-active%20development-brightgreen)
-
-**English** · [正體中文](#正體中文)
+<p align="center"><b>English</b> · <a href="#正體中文">正體中文</a></p>
 
 ---
 
