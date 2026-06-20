@@ -5,6 +5,7 @@ use std::fs;
 use tauri::ipc::Channel;
 use tauri::{AppHandle, Manager, State};
 
+use crate::ai::{AiManager, ChatMessage, ProviderConfig};
 use crate::error::{AppError, AppResult};
 use crate::importer::{self, ImportedSite};
 use crate::secrets::{self, SecretKind};
@@ -704,4 +705,84 @@ pub fn settings_get(settings: State<'_, SettingsStore>) -> Settings {
 #[tauri::command]
 pub fn settings_set(value: Settings, settings: State<'_, SettingsStore>) -> AppResult<Settings> {
     settings.set(value)
+}
+
+// --- AI assistant (multi-provider, BYO key) ---
+
+/// Stream a chat completion to the frontend over `on_chunk` (AI-1).
+///
+/// The provider/model come from the caller; the API key, base URL, token budget,
+/// and redaction toggle are resolved from settings + the keychain/vault here so
+/// the key never reaches the WebView. With redaction on (AI-N4), message and
+/// system text are scrubbed of obvious secrets before the request leaves.
+#[allow(clippy::too_many_arguments)]
+#[tauri::command]
+pub async fn ai_stream(
+    request_id: String,
+    provider: String,
+    model: String,
+    messages: Vec<ChatMessage>,
+    system: Option<String>,
+    on_chunk: Channel<String>,
+    ai: State<'_, AiManager>,
+    settings: State<'_, SettingsStore>,
+    vault: State<'_, VaultState>,
+) -> AppResult<()> {
+    let s = settings.get();
+    // Ollama needs no real key; every other provider must have one (AI-N3).
+    let api_key = if provider == "ollama" {
+        None
+    } else {
+        let key = secrets::get_pref(SecretKind::ApiKey, &provider, vault.inner())?;
+        if key.is_none() {
+            return Err(AppError::Auth("no API key set for this AI provider".into()));
+        }
+        key
+    };
+
+    let (messages, system) = if s.ai_redact_secrets {
+        (
+            messages
+                .into_iter()
+                .map(|m| ChatMessage {
+                    role: m.role,
+                    content: crate::ai::redact(&m.content),
+                })
+                .collect(),
+            system.map(|sys| crate::ai::redact(&sys)),
+        )
+    } else {
+        (messages, system)
+    };
+
+    let cfg = ProviderConfig {
+        provider,
+        model,
+        base_url: s.ai_base_url,
+        api_key,
+        max_tokens: s.ai_max_tokens,
+    };
+    ai.stream(request_id, cfg, messages, system, on_chunk).await
+}
+
+/// Cancel an in-flight AI stream by its request id (AI-1).
+#[tauri::command]
+pub fn ai_cancel(request_id: String, ai: State<'_, AiManager>) {
+    ai.cancel(&request_id);
+}
+
+/// Store/replace an AI provider's API key (keychain, or vault fallback) (AI-N3).
+#[tauri::command]
+pub fn ai_set_api_key(
+    provider: String,
+    key: String,
+    vault: State<'_, VaultState>,
+) -> AppResult<()> {
+    secrets::set_pref(SecretKind::ApiKey, &provider, &key, vault.inner())
+}
+
+/// Whether an API key is stored for a provider (returns only a bool, never the key).
+#[tauri::command]
+pub fn ai_has_api_key(provider: String, vault: State<'_, VaultState>) -> AppResult<bool> {
+    Ok(secrets::get_pref(SecretKind::ApiKey, &provider, vault.inner())?.is_some())
 }

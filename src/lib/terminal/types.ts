@@ -19,6 +19,12 @@ export interface TerminalApi {
 	findNext(query: string, options?: ISearchOptions): void;
 	/** Search backward for a query (TM-10). */
 	findPrevious(query: string, options?: ISearchOptions): void;
+	/** Current text selection, or '' when nothing is selected (AI-3). */
+	getSelection(): string;
+	/** Last `lines` rows of the buffer as text, for AI context (AI-4). */
+	getRecentText(lines: number): string;
+	/** Insert text at the shell prompt (paste; no auto-newline) (AI-2 / AI-N2). */
+	insert(text: string): void;
 }
 
 /** Terminal dimensions in character cells. */

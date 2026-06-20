@@ -204,7 +204,23 @@
 			},
 			findPrevious: (q, opts) => {
 				searchAddon?.findPrevious(q, opts);
-			}
+			},
+			getSelection: () => term?.getSelection() ?? '',
+			getRecentText: (lines) => {
+				if (!term) return '';
+				const buf = term.buffer.active;
+				const end = buf.length;
+				const start = Math.max(0, end - lines);
+				const out: string[] = [];
+				for (let y = start; y < end; y++) {
+					out.push(buf.getLine(y)?.translateToString(true) ?? '');
+				}
+				// Trim trailing blank lines that the buffer pads with.
+				return out.join('\n').replace(/\n+$/, '');
+			},
+			// Paste into the shell input (bracketed paste if enabled). No newline
+			// is appended, so the user reviews and presses Enter (AI-N2).
+			insert: (text) => term?.paste(text)
 		};
 		onReady?.(api);
 		term.focus();

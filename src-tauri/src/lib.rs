@@ -1,3 +1,4 @@
+mod ai;
 mod commands;
 mod error;
 mod importer;
@@ -12,6 +13,7 @@ mod transfer;
 mod tunnel;
 mod vault;
 
+use ai::AiManager;
 use session::SessionManager;
 use settings::SettingsStore;
 use store::SiteStore;
@@ -29,6 +31,7 @@ pub fn run() {
         .manage(SessionManager::new())
         .manage(TunnelManager::new())
         .manage(TransferManager::new())
+        .manage(AiManager::default())
         .manage(VaultState::default())
         .manage(ssh::HostKeyPrompts::default())
         .setup(|app| {
@@ -89,6 +92,10 @@ pub fn run() {
             commands::vault_get_secret,
             commands::vault_delete_secret,
             commands::vault_keys,
+            commands::ai_stream,
+            commands::ai_cancel,
+            commands::ai_set_api_key,
+            commands::ai_has_api_key,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

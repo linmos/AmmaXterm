@@ -29,6 +29,21 @@ fn default_keepalive() -> u32 {
 fn default_copy_on_select() -> bool {
     true
 }
+fn default_true() -> bool {
+    true
+}
+fn default_ai_provider() -> String {
+    "claude".to_string()
+}
+fn default_ai_model() -> String {
+    "claude-sonnet-4-6".to_string()
+}
+fn default_ai_max_tokens() -> u32 {
+    1024
+}
+fn default_ai_context_lines() -> u32 {
+    200
+}
 
 /// User-facing global defaults. Field defaults keep older/partial files valid.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -54,6 +69,29 @@ pub struct Settings {
     /// Copy the terminal selection to the clipboard as soon as it is made (TM-4).
     #[serde(default = "default_copy_on_select")]
     pub copy_on_select: bool,
+
+    // --- AI assistant (multi-provider, BYO key) ---
+    /// Master switch for the AI assistant feature (AI-1); off by default.
+    #[serde(default)]
+    pub ai_enabled: bool,
+    /// Active provider: "claude" | "openai" | "ollama" (AI-5).
+    #[serde(default = "default_ai_provider")]
+    pub ai_provider: String,
+    /// Model id for the active provider (user-editable).
+    #[serde(default = "default_ai_model")]
+    pub ai_model: String,
+    /// Custom endpoint base URL; empty = the provider's default.
+    #[serde(default)]
+    pub ai_base_url: String,
+    /// Max tokens per reply.
+    #[serde(default = "default_ai_max_tokens")]
+    pub ai_max_tokens: u32,
+    /// Terminal lines pulled by "analyze output" (AI-4).
+    #[serde(default = "default_ai_context_lines")]
+    pub ai_context_lines: u32,
+    /// Best-effort secret redaction before sending (AI-N4); on by default.
+    #[serde(default = "default_true")]
+    pub ai_redact_secrets: bool,
 }
 
 fn default_schema() -> u32 {
@@ -71,6 +109,13 @@ impl Default for Settings {
             keepalive_secs: default_keepalive(),
             auto_reconnect: false,
             copy_on_select: default_copy_on_select(),
+            ai_enabled: false,
+            ai_provider: default_ai_provider(),
+            ai_model: default_ai_model(),
+            ai_base_url: String::new(),
+            ai_max_tokens: default_ai_max_tokens(),
+            ai_context_lines: default_ai_context_lines(),
+            ai_redact_secrets: true,
         }
     }
 }

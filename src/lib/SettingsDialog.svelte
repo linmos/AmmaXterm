@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
+	import { app } from '$lib/state.svelte';
 	import { i18n } from '$lib/i18n.svelte';
 	import { settings, THEME_NAMES, type Settings } from '$lib/settings.svelte';
 
@@ -17,8 +18,38 @@
 	let keepaliveSecs = $state(init.keepaliveSecs);
 	let autoReconnect = $state(init.autoReconnect);
 	let copyOnSelect = $state(init.copyOnSelect);
+	// AI assistant settings.
+	let aiEnabled = $state(init.aiEnabled);
+	let aiProvider = $state(init.aiProvider);
+	let aiModel = $state(init.aiModel);
+	let aiBaseUrl = $state(init.aiBaseUrl);
+	let aiMaxTokens = $state(init.aiMaxTokens);
+	let aiContextLines = $state(init.aiContextLines);
+	let aiRedactSecrets = $state(init.aiRedactSecrets);
+	// API key is never pre-filled; blank on save = keep the stored key.
+	let aiApiKey = $state('');
+	let aiHasKey = $state(false);
 	let saving = $state(false);
 	let errorMsg = $state<string | undefined>(undefined);
+
+	const MODEL_PLACEHOLDER: Record<string, string> = {
+		claude: 'claude-sonnet-4-6',
+		openai: 'gpt-4o',
+		ollama: 'llama3.1'
+	};
+
+	// Reflect whether the selected provider already has a stored key.
+	$effect(() => {
+		const provider = aiProvider;
+		if (provider === 'ollama') {
+			aiHasKey = true;
+			return;
+		}
+		app
+			.aiHasApiKey(provider)
+			.then((v) => (aiHasKey = v))
+			.catch(() => (aiHasKey = false));
+	});
 
 	async function save(event: Event) {
 		event.preventDefault();
@@ -32,9 +63,20 @@
 			scrollback: Number(scrollback),
 			keepaliveSecs: Number(keepaliveSecs),
 			autoReconnect,
-			copyOnSelect
+			copyOnSelect,
+			aiEnabled,
+			aiProvider,
+			aiModel: aiModel.trim() || MODEL_PLACEHOLDER[aiProvider] || aiModel,
+			aiBaseUrl: aiBaseUrl.trim(),
+			aiMaxTokens: Number(aiMaxTokens),
+			aiContextLines: Number(aiContextLines),
+			aiRedactSecrets
 		};
 		try {
+			// Persist a newly entered API key (blank = keep the existing one).
+			if (aiProvider !== 'ollama' && aiApiKey.trim()) {
+				await app.aiSetApiKey(aiProvider, aiApiKey.trim());
+			}
 			await settings.save(next);
 			onclose();
 		} catch (err) {
@@ -90,6 +132,53 @@
 			<input type="checkbox" bind:checked={autoReconnect} />
 			{i18n.t('settings.autoReconnect')}
 		</label>
+
+		<h3>{i18n.t('settings.aiSection')}</h3>
+		<label class="check">
+			<input type="checkbox" bind:checked={aiEnabled} />
+			{i18n.t('settings.aiEnabled')}
+		</label>
+		{#if aiEnabled}
+			<div class="row">
+				<label class="grow">
+					{i18n.t('ai.provider')}
+					<select bind:value={aiProvider}>
+						<option value="claude">Claude (Anthropic)</option>
+						<option value="openai">OpenAI / compatible</option>
+						<option value="ollama">Ollama (local)</option>
+					</select>
+				</label>
+				<label class="grow">
+					{i18n.t('ai.model')}
+					<input bind:value={aiModel} placeholder={MODEL_PLACEHOLDER[aiProvider]} />
+				</label>
+			</div>
+			{#if aiProvider !== 'ollama'}
+				<label>
+					{i18n.t('settings.aiApiKey')}
+					{#if aiHasKey}<span class="hint">{i18n.t('settings.aiKeySaved')}</span>{/if}
+					<input
+						type="password"
+						bind:value={aiApiKey}
+						placeholder={aiHasKey ? i18n.t('site.blankKeep') : ''}
+						autocomplete="off"
+					/>
+				</label>
+			{/if}
+			<label>
+				{i18n.t('settings.aiBaseUrl')} <span class="hint">{i18n.t('settings.aiBaseUrlHint')}</span>
+				<input bind:value={aiBaseUrl} placeholder="https://…" />
+			</label>
+			<div class="row">
+				<label class="grow">{i18n.t('settings.aiMaxTokens')}<input type="number" min="64" max="32000" step="64" bind:value={aiMaxTokens} /></label>
+				<label class="grow">{i18n.t('settings.aiContextLines')}<input type="number" min="0" max="5000" step="50" bind:value={aiContextLines} /></label>
+			</div>
+			<label class="check">
+				<input type="checkbox" bind:checked={aiRedactSecrets} />
+				{i18n.t('settings.aiRedact')}
+			</label>
+			<p class="hint">{i18n.t('settings.aiPrivacy')}</p>
+		{/if}
 
 		{#if errorMsg}<p class="error">{errorMsg}</p>{/if}
 

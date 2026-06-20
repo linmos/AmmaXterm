@@ -15,6 +15,14 @@ export interface Settings {
 	keepaliveSecs: number;
 	autoReconnect: boolean;
 	copyOnSelect: boolean;
+	// AI assistant (multi-provider, BYO key).
+	aiEnabled: boolean;
+	aiProvider: string;
+	aiModel: string;
+	aiBaseUrl: string;
+	aiMaxTokens: number;
+	aiContextLines: number;
+	aiRedactSecrets: boolean;
 }
 
 // "system" follows the OS colour scheme; "dark"/"light" pin a concrete palette.
@@ -62,7 +70,14 @@ const DEFAULTS: Settings = {
 	scrollback: 5000,
 	keepaliveSecs: 30,
 	autoReconnect: false,
-	copyOnSelect: true
+	copyOnSelect: true,
+	aiEnabled: false,
+	aiProvider: 'claude',
+	aiModel: 'claude-sonnet-4-6',
+	aiBaseUrl: '',
+	aiMaxTokens: 1024,
+	aiContextLines: 200,
+	aiRedactSecrets: true
 };
 
 class AppSettings {

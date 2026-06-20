@@ -1,17 +1,19 @@
 <script lang="ts">
 	import { i18n } from '$lib/i18n.svelte';
 
-	export type SidebarView = 'sessions' | 'files' | 'tunnels';
+	export type SidebarView = 'sessions' | 'files' | 'tunnels' | 'ai';
 
 	interface Props {
 		active: SidebarView;
 		collapsed: boolean;
 		tunnelCount: number;
+		aiEnabled: boolean;
 		onselect: (view: SidebarView) => void;
 		onsettings: () => void;
 		onabout: () => void;
 	}
-	let { active, collapsed, tunnelCount, onselect, onsettings, onabout }: Props = $props();
+	let { active, collapsed, tunnelCount, aiEnabled, onselect, onsettings, onabout }: Props =
+		$props();
 
 	// A view button reads "active" only when its view is showing *and* the
 	// sidebar is open — clicking the open view collapses it (VS Code behaviour).
@@ -68,6 +70,22 @@
 			</svg>
 			{#if tunnelCount > 0}<span class="badge">{tunnelCount}</span>{/if}
 		</button>
+
+		{#if aiEnabled}
+			<button
+				class="item"
+				class:on={isOn('ai')}
+				title={i18n.t('ai.title')}
+				aria-label={i18n.t('ai.title')}
+				aria-pressed={isOn('ai')}
+				onclick={() => onselect('ai')}
+			>
+				<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round">
+					<path d="M8 1.6l1.5 3.4 3.4 1.5-3.4 1.5L8 11.4 6.5 8 3.1 6.5 6.5 5z" />
+					<path d="M12.8 10.4l.6 1.4 1.4.6-1.4.6-.6 1.4-.6-1.4-1.4-.6 1.4-.6z" fill="currentColor" stroke="none" />
+				</svg>
+			</button>
+		{/if}
 	</div>
 
 	<div class="group bottom">
