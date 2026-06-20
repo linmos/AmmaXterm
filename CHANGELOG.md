@@ -11,6 +11,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Bastion / ProxyJump (multi-hop) and the remaining per-site overrides.
 - PuTTY session import.
 
+## [0.3.1] - 2026-06-20
+
+### Added
+- **Duplicate session** from the session-list right-click menu (Connect / Edit /
+  Duplicate / Delete). The clone copies the stored password and key passphrase.
+
+### Fixed
+- Port-forwarding activity-bar badge no longer keeps a stale tunnel count after a
+  session is closed or dropped — the session's tunnels are now torn down on any
+  disconnect (not just an explicit one) and the count refreshes immediately.
+- Widened the session dialog so the auto-tunnel "destination host" field is no
+  longer clipped.
+
 ## [0.3.0] - 2026-06-19
 
 ### Added
