@@ -9,8 +9,9 @@
 		tunnelCount: number;
 		onselect: (view: SidebarView) => void;
 		onsettings: () => void;
+		onabout: () => void;
 	}
-	let { active, collapsed, tunnelCount, onselect, onsettings }: Props = $props();
+	let { active, collapsed, tunnelCount, onselect, onsettings, onabout }: Props = $props();
 
 	// A view button reads "active" only when its view is showing *and* the
 	// sidebar is open — clicking the open view collapses it (VS Code behaviour).
@@ -70,6 +71,13 @@
 	</div>
 
 	<div class="group bottom">
+		<button class="item" title={i18n.t('about.open')} aria-label={i18n.t('about.open')} onclick={onabout}>
+			<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2">
+				<circle cx="8" cy="8" r="6.4" />
+				<path d="M8 7.1v4" stroke-linecap="round" />
+				<circle cx="8" cy="4.8" r="0.5" fill="currentColor" stroke="none" />
+			</svg>
+		</button>
 		<button class="item" title={i18n.t('settings.open')} aria-label={i18n.t('settings.open')} onclick={onsettings}>
 			<svg viewBox="0 0 24 24" fill="currentColor">
 				<path

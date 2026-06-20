@@ -12,12 +12,14 @@
 	import SftpPanel from '$lib/sftp/SftpPanel.svelte';
 	import TunnelPanel from '$lib/tunnel/TunnelPanel.svelte';
 	import SettingsDialog from '$lib/SettingsDialog.svelte';
+	import AboutDialog from '$lib/AboutDialog.svelte';
 	import HostKeyDialog from '$lib/HostKeyDialog.svelte';
 
 	let view = $state<SidebarView>('sessions');
 	let collapsed = $state(false);
 	let sidebarWidth = $state(300);
 	let showSettings = $state(false);
+	let showAbout = $state(false);
 
 	const activeSession = $derived(app.activeTab?.sessionId);
 	const tunnelCount = $derived(app.tunnels.length);
@@ -95,6 +97,7 @@
 			{tunnelCount}
 			onselect={selectView}
 			onsettings={() => (showSettings = true)}
+			onabout={() => (showAbout = true)}
 		/>
 
 		{#if !collapsed}
@@ -136,6 +139,9 @@
 
 {#if showSettings}
 	<SettingsDialog onclose={() => (showSettings = false)} />
+{/if}
+{#if showAbout}
+	<AboutDialog onclose={() => (showAbout = false)} />
 {/if}
 <HostKeyDialog />
 
