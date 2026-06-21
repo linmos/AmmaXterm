@@ -38,6 +38,10 @@ uuid = { version = "1.23.3", features = ["v4"] }
 tauri-plugin-dialog = "2.7.1"
 # Remember window size/position/maximized across launches (clamped to monitors).
 tauri-plugin-window-state = "2"
+# In-app auto-update: check/download/install signed updates from GitHub Releases
+# (`tauri-plugin-process` provides the relaunch after install).
+tauri-plugin-updater = "2"
+tauri-plugin-process = "2"
 # AI assistant (multi-provider, BYO key): outbound HTTPS + SSE streaming.
 # Default TLS (schannel on Windows / Secure Transport on macOS / openssl on
 # Linux) keeps the Windows build free of NASM/cmake toolchain requirements.
