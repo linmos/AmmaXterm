@@ -435,7 +435,9 @@ fn parse_models(kind: ModelList, v: &Value) -> Vec<String> {
             items
                 .iter()
                 .filter_map(|m| m.get(field).and_then(Value::as_str))
-                .map(str::to_string)
+                // Gemini ids come back as `models/gemini-…`; the chat endpoint
+                // wants the bare id. Harmless no-op for OpenAI/Ollama.
+                .map(|id| id.strip_prefix("models/").unwrap_or(id).to_string())
                 .collect()
         })
         .unwrap_or_default()
@@ -660,11 +662,12 @@ mod tests {
     #[test]
     fn parse_models_openai_and_ollama() {
         let openai = serde_json::json!({
-            "data": [{ "id": "gpt-4o" }, { "id": "gpt-4o-mini" }]
+            "data": [{ "id": "gpt-4o" }, { "id": "models/gemini-2.5-flash" }]
         });
+        // The `models/` prefix (Gemini) is stripped; plain ids pass through.
         assert_eq!(
             parse_models(ModelList::OpenAiData, &openai),
-            vec!["gpt-4o".to_string(), "gpt-4o-mini".to_string()]
+            vec!["gpt-4o".to_string(), "gemini-2.5-flash".to_string()]
         );
         let ollama = serde_json::json!({
             "models": [{ "name": "llama3.1:latest" }, { "name": "qwen2.5:7b" }]

@@ -182,10 +182,19 @@
 						{aiModelsBusy ? i18n.t('ai.loadingModels') : i18n.t('ai.loadModels')}
 					</button>
 				</span>
-				<input bind:value={aiModel} list="ai-models" placeholder={MODEL_PLACEHOLDER[aiProvider]} />
-				<datalist id="ai-models">
-					{#each aiModels as m (m)}<option value={m}></option>{/each}
-				</datalist>
+				<input bind:value={aiModel} placeholder={MODEL_PLACEHOLDER[aiProvider]} />
+				{#if aiModels.length}
+					<select
+						class="modelpick"
+						onchange={(e) => {
+							aiModel = e.currentTarget.value;
+							e.currentTarget.selectedIndex = 0;
+						}}
+					>
+						<option value="">{i18n.t('ai.pickModel')} ({aiModels.length})</option>
+						{#each aiModels as m (m)}<option value={m}>{m}</option>{/each}
+					</select>
+				{/if}
 			</label>
 			{#if aiProvider !== 'ollama'}
 				<label>
