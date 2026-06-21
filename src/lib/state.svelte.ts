@@ -1,6 +1,7 @@
 import { invoke, Channel } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { settings } from './settings.svelte';
+import type { ChatMessage } from './ai/types';
 import type { ImportedSite, Site, SiteInput } from './sites/types';
 import type { TerminalApi, TerminalSize } from './terminal/types';
 import type { TransferInfo } from './sftp/types';
@@ -273,6 +274,49 @@ class AppState {
 	}
 	async vaultKeys(): Promise<string[]> {
 		return invoke('vault_keys');
+	}
+
+	// --- AI assistant (multi-provider, BYO key) ---
+
+	/** Stream a chat completion; text deltas arrive on `onChunk`. Resolves when
+	 *  the stream completes, rejects on provider/transport error. */
+	async aiStream(
+		requestId: string,
+		provider: string,
+		model: string,
+		messages: ChatMessage[],
+		system: string | undefined,
+		onChunk: Channel<string>
+	): Promise<void> {
+		await invoke('ai_stream', {
+			requestId,
+			provider,
+			model,
+			messages,
+			system: system ?? null,
+			onChunk
+		});
+	}
+
+	/** Cancel an in-flight AI stream (fire-and-forget). */
+	aiCancel(requestId: string) {
+		invoke('ai_cancel', { requestId }).catch(() => {});
+	}
+
+	/** Store/replace a provider's API key (keychain / vault). */
+	async aiSetApiKey(provider: string, key: string): Promise<void> {
+		await invoke('ai_set_api_key', { provider, key });
+	}
+
+	/** Whether a provider already has a stored API key. */
+	async aiHasApiKey(provider: string): Promise<boolean> {
+		return invoke<boolean>('ai_has_api_key', { provider });
+	}
+
+	/** List the models available for a provider. `key` previews a just-typed,
+	 *  not-yet-saved key; omit to use the stored one. */
+	async aiListModels(provider: string, key?: string): Promise<string[]> {
+		return invoke<string[]>('ai_list_models', { provider, key: key ?? null });
 	}
 
 	/** Move a site into a group (or out of all groups when `group` is null).

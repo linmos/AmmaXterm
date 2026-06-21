@@ -19,6 +19,10 @@ const SERVICE: &str = "com.ammaxterm.app";
 pub enum SecretKind {
     Password,
     Passphrase,
+    /// AI provider API key (AI-N3). Provider-scoped, not site-scoped: the
+    /// `site_id` slot carries the provider id (e.g. `"claude"`), so entries are
+    /// namespaced as `api_key:claude`.
+    ApiKey,
 }
 
 impl SecretKind {
@@ -26,6 +30,7 @@ impl SecretKind {
         match self {
             SecretKind::Password => "password",
             SecretKind::Passphrase => "passphrase",
+            SecretKind::ApiKey => "api_key",
         }
     }
 }

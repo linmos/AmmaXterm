@@ -11,6 +11,7 @@
 	import TerminalTabs from '$lib/session/TerminalTabs.svelte';
 	import SftpPanel from '$lib/sftp/SftpPanel.svelte';
 	import TunnelPanel from '$lib/tunnel/TunnelPanel.svelte';
+	import AiPanel from '$lib/ai/AiPanel.svelte';
 	import SettingsDialog from '$lib/SettingsDialog.svelte';
 	import AboutDialog from '$lib/AboutDialog.svelte';
 	import HostKeyDialog from '$lib/HostKeyDialog.svelte';
@@ -23,6 +24,12 @@
 
 	const activeSession = $derived(app.activeTab?.sessionId);
 	const tunnelCount = $derived(app.tunnels.length);
+
+	// Fall back to the sessions view if the AI panel is showing when the feature
+	// gets disabled in settings (its activity-bar button disappears too).
+	$effect(() => {
+		if (view === 'ai' && !settings.s.aiEnabled) view = 'sessions';
+	});
 
 	// Activity-bar click: re-clicking the open view collapses the sidebar;
 	// otherwise switch to that view and make sure the sidebar is showing.
@@ -95,6 +102,7 @@
 			active={view}
 			{collapsed}
 			{tunnelCount}
+			aiEnabled={settings.s.aiEnabled}
 			onselect={selectView}
 			onsettings={() => (showSettings = true)}
 			onabout={() => (showAbout = true)}
@@ -104,6 +112,9 @@
 			<div class="sidebar" style="width: {sidebarWidth}px">
 				{#if view === 'sessions'}
 					<SiteSidebar />
+				{:else if view === 'ai'}
+					<div class="view-head">{i18n.t('ai.title')}</div>
+					<AiPanel />
 				{:else}
 					<div class="view-head">{viewTitle}</div>
 					{#if activeSession}
