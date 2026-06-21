@@ -14,3 +14,9 @@ CLAUDE.md
 
 # Internal design docs (PRD / plan / spike notes); not tracked.
 /docs/
+
+# Updater signing keys — private key must never be committed (CI uses a repo
+# secret); the public key already lives in tauri.conf.json, so the .pub is just
+# a local backup.
+*.key
+*.key.pub

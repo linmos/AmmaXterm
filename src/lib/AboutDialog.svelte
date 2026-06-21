@@ -2,6 +2,7 @@
 	import { getVersion, getTauriVersion } from '@tauri-apps/api/app';
 	import { openUrl } from '@tauri-apps/plugin-opener';
 	import { i18n } from '$lib/i18n.svelte';
+	import { updater } from '$lib/updater.svelte';
 
 	interface Props {
 		onclose: () => void;
@@ -48,6 +49,19 @@
 		</dl>
 
 		<div class="actions">
+			{#if updater.phase === 'checking'}
+				<span class="status">{i18n.t('update.checking')}</span>
+			{:else if updater.phase === 'uptodate'}
+				<span class="status">{i18n.t('update.upToDate')}</span>
+			{/if}
+			<button
+				type="button"
+				class="ghost"
+				disabled={updater.phase === 'checking' || updater.phase === 'downloading'}
+				onclick={() => updater.checkForUpdates(false)}
+			>
+				{i18n.t('update.check')}
+			</button>
 			<button type="button" onclick={onclose}>{i18n.t('common.close')}</button>
 		</div>
 	</div>
@@ -132,7 +146,14 @@
 	}
 	.actions {
 		display: flex;
+		align-items: center;
 		justify-content: flex-end;
+		gap: 8px;
+	}
+	.status {
+		margin-right: auto;
+		font-size: 12px;
+		color: var(--vsc-muted);
 	}
 	button {
 		padding: 7px 14px;
@@ -145,5 +166,17 @@
 	}
 	button:hover {
 		background: var(--vsc-button-hover);
+	}
+	button:disabled {
+		opacity: 0.5;
+		cursor: default;
+	}
+	button.ghost {
+		background: transparent;
+		color: var(--vsc-editor-fg);
+		border: 1px solid var(--vsc-widget-border);
+	}
+	button.ghost:hover:not(:disabled) {
+		background: var(--vsc-list-hover, rgba(255, 255, 255, 0.06));
 	}
 </style>

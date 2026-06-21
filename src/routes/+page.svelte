@@ -14,7 +14,9 @@
 	import AiPanel from '$lib/ai/AiPanel.svelte';
 	import SettingsDialog from '$lib/SettingsDialog.svelte';
 	import AboutDialog from '$lib/AboutDialog.svelte';
+	import UpdateDialog from '$lib/UpdateDialog.svelte';
 	import HostKeyDialog from '$lib/HostKeyDialog.svelte';
+	import { updater } from '$lib/updater.svelte';
 
 	let view = $state<SidebarView>('sessions');
 	let collapsed = $state(false);
@@ -92,7 +94,15 @@
 		// (copy/paste) on its container, which runs first and still works.
 		const noContextMenu = (e: MouseEvent) => e.preventDefault();
 		window.addEventListener('contextmenu', noContextMenu);
-		return () => window.removeEventListener('contextmenu', noContextMenu);
+
+		// Silent background update check shortly after launch — surfaces a prompt
+		// only when a newer release exists; no-ops under `tauri dev` / offline.
+		const updateTimer = setTimeout(() => updater.checkForUpdates(true), 3000);
+
+		return () => {
+			window.removeEventListener('contextmenu', noContextMenu);
+			clearTimeout(updateTimer);
+		};
 	});
 </script>
 
@@ -154,6 +164,7 @@
 {#if showAbout}
 	<AboutDialog onclose={() => (showAbout = false)} />
 {/if}
+<UpdateDialog />
 <HostKeyDialog />
 
 <style>
