@@ -313,9 +313,10 @@ class AppState {
 		return invoke<boolean>('ai_has_api_key', { provider });
 	}
 
-	/** List the models available for a provider. */
-	async aiListModels(provider: string): Promise<string[]> {
-		return invoke<string[]>('ai_list_models', { provider });
+	/** List the models available for a provider. `key` previews a just-typed,
+	 *  not-yet-saved key; omit to use the stored one. */
+	async aiListModels(provider: string, key?: string): Promise<string[]> {
+		return invoke<string[]>('ai_list_models', { provider, key: key ?? null });
 	}
 
 	/** Move a site into a group (or out of all groups when `group` is null).

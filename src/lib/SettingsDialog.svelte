@@ -57,16 +57,25 @@
 	});
 
 	// Fetch the provider's model list to populate the datalist (AI-5, P3).
+	// Pass the just-typed key so models can be previewed before saving.
 	async function loadModels() {
 		aiModelsBusy = true;
 		errorMsg = undefined;
 		try {
-			aiModels = await app.aiListModels(aiProvider);
+			aiModels = await app.aiListModels(aiProvider, aiApiKey.trim() || undefined);
 		} catch (err) {
 			errorMsg = (err as { message?: string })?.message ?? String(err);
 		} finally {
 			aiModelsBusy = false;
 		}
+	}
+
+	// Switching provider resets the model to that provider's default and clears
+	// the (provider-specific) key field, so a stale value can't carry over.
+	function onProviderChange(next: string) {
+		aiProvider = next;
+		aiModel = MODEL_PLACEHOLDER[next] ?? '';
+		aiApiKey = '';
 	}
 
 	async function save(event: Event) {
@@ -159,7 +168,7 @@
 		{#if aiEnabled}
 			<label>
 				{i18n.t('ai.provider')}
-				<select bind:value={aiProvider}>
+				<select value={aiProvider} onchange={(e) => onProviderChange(e.currentTarget.value)}>
 					<option value="claude">Claude (Anthropic)</option>
 					<option value="openai">OpenAI / compatible</option>
 					<option value="gemini">Google Gemini</option>

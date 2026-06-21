@@ -788,9 +788,14 @@ pub fn ai_has_api_key(provider: String, vault: State<'_, VaultState>) -> AppResu
 }
 
 /// List the models available for a provider (AI-5, P3).
+///
+/// `key` lets the Settings dialog preview models with a just-typed key that
+/// has not been saved to the keychain/vault yet; when omitted or blank, the
+/// stored key is used.
 #[tauri::command]
 pub async fn ai_list_models(
     provider: String,
+    key: Option<String>,
     ai: State<'_, AiManager>,
     settings: State<'_, SettingsStore>,
     vault: State<'_, VaultState>,
@@ -799,11 +804,15 @@ pub async fn ai_list_models(
     let api_key = if provider == "ollama" {
         None
     } else {
-        let key = secrets::get_pref(SecretKind::ApiKey, &provider, vault.inner())?;
-        if key.is_none() {
+        // Prefer an explicitly supplied (typed but unsaved) key, else the stored one.
+        let resolved = match key.filter(|k| !k.trim().is_empty()) {
+            Some(k) => Some(k),
+            None => secrets::get_pref(SecretKind::ApiKey, &provider, vault.inner())?,
+        };
+        if resolved.is_none() {
             return Err(AppError::Auth("no API key set for this AI provider".into()));
         }
-        key
+        resolved
     };
     let cfg = ProviderConfig {
         provider,
