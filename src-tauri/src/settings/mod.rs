@@ -39,7 +39,7 @@ fn default_ai_model() -> String {
     "claude-sonnet-4-6".to_string()
 }
 fn default_ai_max_tokens() -> u32 {
-    1024
+    2048
 }
 fn default_ai_context_lines() -> u32 {
     200

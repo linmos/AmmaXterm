@@ -75,7 +75,7 @@ const DEFAULTS: Settings = {
 	aiProvider: 'claude',
 	aiModel: 'claude-sonnet-4-6',
 	aiBaseUrl: '',
-	aiMaxTokens: 1024,
+	aiMaxTokens: 2048,
 	aiContextLines: 200,
 	aiRedactSecrets: true
 };

@@ -100,6 +100,7 @@ const en: Messages = {
 	'settings.aiBaseUrlHint': '(optional)',
 	'settings.aiMaxTokens': 'Max tokens',
 	'settings.aiContextLines': 'Context lines',
+	'settings.aiAdvanced': 'Advanced',
 	'settings.aiRedact': 'Redact secrets before sending',
 	'settings.aiPrivacy':
 		'Nothing is sent until you ask. Only text you select, paste, or type is sent to the provider.',
@@ -341,6 +342,7 @@ const zhTW: Messages = {
 	'settings.aiBaseUrlHint': '（選填）',
 	'settings.aiMaxTokens': '最大 tokens',
 	'settings.aiContextLines': '情境行數',
+	'settings.aiAdvanced': '進階',
 	'settings.aiRedact': '傳送前遮蔽機密字串',
 	'settings.aiPrivacy': '未詢問前不會送出任何內容；只有你選取、貼上或輸入的文字會送給供應商。',
 	'ai.title': 'AI 助手',

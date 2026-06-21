@@ -212,10 +212,13 @@
 				{i18n.t('settings.aiBaseUrl')} <span class="hint">{i18n.t('settings.aiBaseUrlHint')}</span>
 				<input bind:value={aiBaseUrl} placeholder="https://…" />
 			</label>
-			<div class="row">
-				<label class="grow">{i18n.t('settings.aiMaxTokens')}<input type="number" min="64" max="32000" step="64" bind:value={aiMaxTokens} /></label>
-				<label class="grow">{i18n.t('settings.aiContextLines')}<input type="number" min="0" max="5000" step="50" bind:value={aiContextLines} /></label>
-			</div>
+			<details class="advanced">
+				<summary>{i18n.t('settings.aiAdvanced')}</summary>
+				<div class="row">
+					<label class="grow">{i18n.t('settings.aiMaxTokens')}<input type="number" min="64" max="32000" step="64" bind:value={aiMaxTokens} /></label>
+					<label class="grow">{i18n.t('settings.aiContextLines')}<input type="number" min="0" max="5000" step="50" bind:value={aiContextLines} /></label>
+				</div>
+			</details>
 			<label class="check">
 				<input type="checkbox" bind:checked={aiRedactSecrets} />
 				{i18n.t('settings.aiRedact')}
@@ -310,6 +313,26 @@
 	}
 	.hint {
 		color: var(--vsc-muted);
+	}
+	.advanced > summary {
+		cursor: pointer;
+		list-style: none;
+		padding: 2px 0;
+		font-size: 12px;
+		color: var(--vsc-muted);
+		user-select: none;
+	}
+	.advanced > summary::-webkit-details-marker {
+		display: none;
+	}
+	.advanced > summary::before {
+		content: '▸ ';
+	}
+	.advanced[open] > summary::before {
+		content: '▾ ';
+	}
+	.advanced > .row {
+		margin-top: 8px;
 	}
 	.rowlabel {
 		display: flex;
