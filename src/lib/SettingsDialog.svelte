@@ -37,6 +37,7 @@
 	const MODEL_PLACEHOLDER: Record<string, string> = {
 		claude: 'claude-sonnet-4-6',
 		openai: 'gpt-4o',
+		gemini: 'gemini-2.5-flash',
 		ollama: 'llama3.1'
 	};
 
@@ -161,6 +162,7 @@
 				<select bind:value={aiProvider}>
 					<option value="claude">Claude (Anthropic)</option>
 					<option value="openai">OpenAI / compatible</option>
+					<option value="gemini">Google Gemini</option>
 					<option value="ollama">Ollama (local)</option>
 				</select>
 			</label>

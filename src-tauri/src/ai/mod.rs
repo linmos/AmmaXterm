@@ -39,7 +39,7 @@ enum Wire {
 
 /// Resolved configuration for a single streaming request.
 pub struct ProviderConfig {
-    /// `"claude"` | `"openai"` | `"ollama"`.
+    /// `"claude"` | `"openai"` | `"gemini"` | `"ollama"`.
     pub provider: String,
     pub model: String,
     /// Empty string = use the provider's default endpoint.
@@ -228,12 +228,11 @@ impl AiManager {
             };
             (format!("{base}/v1/models"), ModelList::OpenAiData)
         } else {
-            let base = if cfg.base_url.is_empty() {
-                "https://api.openai.com/v1"
-            } else {
-                cfg.base_url.trim_end_matches('/')
-            };
-            (format!("{base}/models"), ModelList::OpenAiData)
+            // OpenAI + Gemini (both via the OpenAI-compatible layer).
+            (
+                format!("{}/models", openai_base(&cfg)),
+                ModelList::OpenAiData,
+            )
         };
 
         let mut req = self.client.get(&url);
@@ -276,6 +275,20 @@ impl AiManager {
     }
 }
 
+/// Base URL for an OpenAI-compatible provider (chat + model listing).
+/// Gemini is served through Google's OpenAI-compatible layer, so it reuses the
+/// whole OpenAI request/SSE path — only the default endpoint differs.
+fn openai_base(cfg: &ProviderConfig) -> String {
+    if !cfg.base_url.is_empty() {
+        return cfg.base_url.trim_end_matches('/').to_string();
+    }
+    match cfg.provider.as_str() {
+        "ollama" => "http://localhost:11434/v1".to_string(),
+        "gemini" => "https://generativelanguage.googleapis.com/v1beta/openai".to_string(),
+        _ => "https://api.openai.com/v1".to_string(),
+    }
+}
+
 /// Build the endpoint URL and JSON body for a provider/request.
 fn build_request(
     cfg: &ProviderConfig,
@@ -312,13 +325,7 @@ fn build_request(
             (url, body)
         }
         Wire::OpenAi => {
-            let base = if !cfg.base_url.is_empty() {
-                cfg.base_url.trim_end_matches('/').to_string()
-            } else if cfg.provider == "ollama" {
-                "http://localhost:11434/v1".to_string()
-            } else {
-                "https://api.openai.com/v1".to_string()
-            };
+            let base = openai_base(cfg);
             let url = format!("{base}/chat/completions");
             let mut msgs: Vec<Value> = Vec::new();
             if let Some(sys) = system {
@@ -620,6 +627,34 @@ mod tests {
         let (url, body) = build_request(&cfg, Wire::OpenAi, &[], &None);
         assert_eq!(url, "http://localhost:11434/v1/chat/completions");
         assert_eq!(body["model"], json!("llama3.1"));
+    }
+
+    #[test]
+    fn gemini_uses_google_openai_compat_base() {
+        let cfg = ProviderConfig {
+            provider: "gemini".into(),
+            model: "gemini-2.5-flash".into(),
+            base_url: String::new(),
+            api_key: Some("k".into()),
+            max_tokens: 256,
+        };
+        let msgs = vec![ChatMessage {
+            role: "user".into(),
+            content: "hi".into(),
+        }];
+        let (url, body) = build_request(&cfg, Wire::OpenAi, &msgs, &None);
+        assert_eq!(
+            url,
+            "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
+        );
+        assert_eq!(body["model"], json!("gemini-2.5-flash"));
+        // A custom base_url overrides the default.
+        let custom = ProviderConfig {
+            base_url: "https://proxy.example/v1/".into(),
+            ..cfg
+        };
+        let (url2, _) = build_request(&custom, Wire::OpenAi, &msgs, &None);
+        assert_eq!(url2, "https://proxy.example/v1/chat/completions");
     }
 
     #[test]

@@ -21,14 +21,14 @@
 	let hasKey = $state(false);
 	let listEl = $state<HTMLDivElement | undefined>(undefined);
 
+	const PROVIDER_LABELS: Record<string, string> = {
+		claude: 'Claude',
+		openai: 'OpenAI',
+		gemini: 'Gemini',
+		ollama: 'Ollama'
+	};
 	const needsKey = $derived(settings.s.aiProvider !== 'ollama');
-	const providerLabel = $derived(
-		settings.s.aiProvider === 'claude'
-			? 'Claude'
-			: settings.s.aiProvider === 'openai'
-				? 'OpenAI'
-				: 'Ollama'
-	);
+	const providerLabel = $derived(PROVIDER_LABELS[settings.s.aiProvider] ?? settings.s.aiProvider);
 
 	// Re-check the stored key whenever the active provider changes.
 	$effect(() => {
