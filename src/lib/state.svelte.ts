@@ -416,9 +416,20 @@ class AppState {
 		if (!tab || !tab.siteId || tab.status === 'connecting' || tab.status === 'connected') return;
 		const site = this.sites.find((s) => s.id === tab.siteId);
 		if (!site) return;
+		// When reconnecting a 'closed' tab the xterm stays mounted, so wipe its dead
+		// screen. On the 'error' path it's unmounted (the api is stale) and remounts
+		// clean on its own, so skip the clear there.
+		const wasClosed = tab.status === 'closed';
 		tab.status = 'connecting';
 		tab.error = undefined;
 		tab.buffer = [];
+		// A new backend session restarts its channel message index at 0, so the
+		// old Channel (whose nextMessageIndex is stuck at the prior session's high
+		// water mark) would buffer every new message forever and the terminal would
+		// stay frozen. Hand the tab a fresh Channel.
+		tab.channel = new Channel<string>();
+		this.bindChannel(tab);
+		if (wasClosed) tab.api?.clear();
 		try {
 			tab.sessionId = await invoke<string>('site_connect', {
 				siteId: site.id,
@@ -428,6 +439,7 @@ class AppState {
 			});
 			tab.status = 'connected';
 			tab.api?.focus();
+			tab.api?.fit();
 		} catch (err) {
 			tab.status = 'error';
 			tab.error = errMessage(err);

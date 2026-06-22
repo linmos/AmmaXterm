@@ -11,6 +11,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Bastion / ProxyJump (multi-hop) and the remaining per-site overrides.
 - PuTTY session import.
 
+## [0.4.1] - 2026-06-22
+
+### Fixed
+- **Reconnect** on a dropped/closed session now works. The "Reconnect" badge was
+  visually on top but unclickable — xterm's canvas layers carry a positive
+  `z-index` and were swallowing the click; the badge now sits above them. And once
+  clicked, reconnecting reused the tab's output channel whose message index was
+  stuck at the previous session's high-water mark, so the fresh session's output
+  was buffered forever and the screen looked frozen — reconnect now hands the tab a
+  new channel and clears the stale screen.
+
 ## [0.3.2] - 2026-06-20
 
 ### Added

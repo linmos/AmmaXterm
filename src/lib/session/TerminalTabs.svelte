@@ -198,6 +198,9 @@
 		position: absolute;
 		top: 10px;
 		right: 14px;
+		/* Above xterm's canvas layers (which carry positive z-index and would
+		   otherwise swallow the click even though the badge paints through). */
+		z-index: 6;
 		display: flex;
 		align-items: center;
 		gap: 8px;
