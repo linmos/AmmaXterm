@@ -140,9 +140,6 @@
 		if (dir === '.' || dir === '') return name;
 		return dir.replace(/\/+$/, '') + '/' + name;
 	}
-	function basename(p: string): string {
-		return p.split(/[\\/]/).pop() ?? p;
-	}
 
 	async function list() {
 		loading = true;
@@ -171,7 +168,10 @@
 	}
 
 	function openEntry(entry: FileEntry) {
-		if (!entry.is_dir) return;
+		// Ignore a second click that arrives while the first navigation is still
+		// loading: a double-click would otherwise re-join the now-stale entry onto
+		// the already-updated path (…/runtimes/runtimes → "No such file").
+		if (!entry.is_dir || loading) return;
 		path = join(path, entry.name);
 		list();
 	}
@@ -250,9 +250,73 @@
 	async function upload() {
 		const selected = await open({ multiple: true, title: i18n.t('sftp.upload') });
 		const files = Array.isArray(selected) ? selected : typeof selected === 'string' ? [selected] : [];
-		for (const f of files) {
-			await app.uploadFile(sessionId, f, join(path, basename(f)));
+		uploadFiles(files);
+	}
+
+	// Overwrite prompt (FT-5): files whose remote target already exists are held
+	// back and resolved one-by-one (or "apply to all") instead of silently
+	// clobbering. Non-conflicting files start uploading immediately.
+	let conflicts = $state<{ local: string; remote: string; name: string }[]>([]);
+	let conflictIdx = $state(0);
+	let conflictApplyAll = $state(false);
+
+	async function uploadFiles(paths: string[]) {
+		// Expand any dropped folders into their files + the dirs to create, so a
+		// whole directory can be uploaded (not just flat files).
+		let plan: { dirs: string[]; files: { local: string; rel: string }[] };
+		try {
+			plan = await invoke('expand_uploads', { paths });
+		} catch (err) {
+			errorMsg = (err as { message?: string })?.message ?? String(err);
+			return;
 		}
+		// Create remote directories first, shallow-first; "already exists" is fine
+		// (we merge into it), so swallow errors here.
+		for (const d of plan.dirs) {
+			await invoke('sftp_mkdir', { id: sessionId, path: join(path, d) }).catch(() => {});
+		}
+		// Top-level files prompt before overwriting (this dir's listing is loaded);
+		// files inside uploaded folders go straight in.
+		const existing = new Set(entries.map((e) => e.name));
+		const pending: { local: string; remote: string; name: string }[] = [];
+		for (const f of plan.files) {
+			const remote = join(path, f.rel);
+			if (!f.rel.includes('/') && existing.has(f.rel)) {
+				pending.push({ local: f.local, remote, name: f.rel });
+			} else {
+				app.uploadFile(sessionId, f.local, remote);
+			}
+		}
+		if (pending.length) {
+			conflicts = pending;
+			conflictIdx = 0;
+			conflictApplyAll = false;
+		}
+		if (plan.dirs.length) list(); // surface the newly created folders
+	}
+
+	function endConflicts() {
+		conflicts = [];
+		conflictIdx = 0;
+		conflictApplyAll = false;
+	}
+
+	async function resolveConflict(action: 'overwrite' | 'skip') {
+		if (conflictApplyAll) {
+			if (action === 'overwrite') {
+				for (let i = conflictIdx; i < conflicts.length; i++) {
+					await app.uploadFile(sessionId, conflicts[i].local, conflicts[i].remote);
+				}
+			}
+			endConflicts();
+			return;
+		}
+		if (action === 'overwrite') {
+			const c = conflicts[conflictIdx];
+			await app.uploadFile(sessionId, c.local, c.remote);
+		}
+		conflictIdx += 1;
+		if (conflictIdx >= conflicts.length) endConflicts();
 	}
 
 	function clearSelection() {
@@ -406,11 +470,7 @@
 				} else if (p.type === 'drop') {
 					const over = inBounds(p.position);
 					dragOver = false;
-					if (over) {
-						for (const f of p.paths) {
-							app.uploadFile(sessionId, f, join(path, basename(f)));
-						}
-					}
+					if (over) uploadFiles(p.paths);
 				}
 			})
 			.then((un) => (unlistenDrop = un));
@@ -606,6 +666,26 @@
 		</div>
 	{/if}
 
+	{#if conflicts.length && conflictIdx < conflicts.length}
+		{@const c = conflicts[conflictIdx]}
+		<div class="modal-backdrop" role="presentation">
+			<div class="modal">
+				<h3>{i18n.t('sftp.overwriteTitle')}</h3>
+				<p class="sub">{i18n.t('sftp.overwritePrompt').replace('{name}', c.name)}</p>
+				{#if conflicts.length - conflictIdx > 1}
+					<label class="applyall">
+						<input type="checkbox" bind:checked={conflictApplyAll} />
+						{i18n.t('sftp.applyToAll').replace('{n}', String(conflicts.length - conflictIdx))}
+					</label>
+				{/if}
+				<div class="acts">
+					<button class="ghost" onclick={() => resolveConflict('skip')}>{i18n.t('sftp.skip')}</button>
+					<button onclick={() => resolveConflict('overwrite')}>{i18n.t('sftp.overwrite')}</button>
+				</div>
+			</div>
+		</div>
+	{/if}
+
 	<TransferQueue {sessionId} />
 </div>
 
@@ -614,7 +694,10 @@
 		position: relative;
 		display: flex;
 		flex-direction: column;
-		height: 100%;
+		/* Fill the space left under `.view-head`, not the whole sidebar — using
+		   height:100% here pushed the bottom (the transfer queue) off-screen. */
+		flex: 1;
+		min-height: 0;
 		color: var(--vsc-sidebar-fg);
 		font: 13px var(--vsc-font);
 		background: var(--vsc-sidebar-bg);
@@ -867,6 +950,18 @@
 		font-size: 12px;
 		color: var(--vsc-muted);
 		word-break: break-all;
+	}
+	.modal .applyall {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		font-size: 12px;
+		color: var(--vsc-muted);
+		cursor: pointer;
+	}
+	.modal .applyall input {
+		width: auto;
+		margin: 0;
 	}
 	.modal input {
 		padding: 7px 9px;

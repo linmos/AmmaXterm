@@ -10,10 +10,17 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use serde::Serialize;
+use tokio::sync::Semaphore;
 
 use crate::error::AppResult;
 use crate::session::SessionManager;
 use crate::ssh::SshHandle;
+
+/// Maximum transfers streaming at once. Each transfer holds one SFTP channel for
+/// its whole duration; opening too many at once exhausts the server's session
+/// limit (OpenSSH `MaxSessions` defaults to 10), which is what made a multi-file
+/// drag-drop fail partway through. Queued transfers wait for a free slot.
+const MAX_CONCURRENT: usize = 4;
 
 /// A queued/active/finished transfer.
 struct Transfer {
@@ -43,10 +50,21 @@ pub struct TransferInfo {
     pub error: Option<String>,
 }
 
-#[derive(Default)]
 pub struct TransferManager {
     items: Mutex<HashMap<String, Arc<Transfer>>>,
     counter: AtomicU64,
+    /// Bounds how many transfers stream concurrently (see `MAX_CONCURRENT`).
+    sem: Arc<Semaphore>,
+}
+
+impl Default for TransferManager {
+    fn default() -> Self {
+        Self {
+            items: Mutex::new(HashMap::new()),
+            counter: AtomicU64::new(0),
+            sem: Arc::new(Semaphore::new(MAX_CONCURRENT)),
+        }
+    }
 }
 
 impl TransferManager {
@@ -81,11 +99,11 @@ impl TransferManager {
             done: Arc::new(AtomicU64::new(0)),
             cancel: Arc::new(AtomicBool::new(false)),
             pause: Arc::new(AtomicBool::new(false)),
-            status: Arc::new(Mutex::new(("active".into(), None))),
+            status: Arc::new(Mutex::new(("queued".into(), None))),
         });
         let id = self.next_id();
         self.items.lock().unwrap().insert(id.clone(), t.clone());
-        spawn_run(t, handle, false);
+        spawn_run(t, handle, self.sem.clone(), false);
         Ok(id)
     }
 
@@ -111,11 +129,11 @@ impl TransferManager {
             done: Arc::new(AtomicU64::new(0)),
             cancel: Arc::new(AtomicBool::new(false)),
             pause: Arc::new(AtomicBool::new(false)),
-            status: Arc::new(Mutex::new(("active".into(), None))),
+            status: Arc::new(Mutex::new(("queued".into(), None))),
         });
         let id = self.next_id();
         self.items.lock().unwrap().insert(id.clone(), t.clone());
-        spawn_run(t, handle, false);
+        spawn_run(t, handle, self.sem.clone(), false);
         Ok(id)
     }
 
@@ -150,8 +168,8 @@ impl TransferManager {
         let handle = manager.handle(&t.session_id)?;
         t.cancel.store(false, Ordering::Relaxed);
         t.pause.store(false, Ordering::Relaxed);
-        *t.status.lock().unwrap() = ("active".into(), None);
-        spawn_run(t, handle, resume);
+        *t.status.lock().unwrap() = ("queued".into(), None);
+        spawn_run(t, handle, self.sem.clone(), resume);
         Ok(())
     }
 
@@ -159,7 +177,8 @@ impl TransferManager {
     pub fn clear(&self, id: &str) {
         let mut guard = self.items.lock().unwrap();
         if let Some(t) = guard.get(id) {
-            if t.status.lock().unwrap().0 == "active" {
+            let state = t.status.lock().unwrap().0.clone();
+            if state == "active" || state == "queued" {
                 return;
             }
         }
@@ -207,8 +226,22 @@ async fn resume_offset(t: &Transfer, handle: &SshHandle) -> u64 {
 
 /// Spawn the transfer task: streams with auto-retry (resuming from the already
 /// transferred bytes) and honours cancel/pause. Records the final status.
-fn spawn_run(t: Arc<Transfer>, handle: Arc<SshHandle>, resume: bool) {
+///
+/// The task first waits on `sem` for a free slot so a burst of queued transfers
+/// (e.g. a multi-file drag-drop) doesn't open more SFTP channels than the server
+/// allows. The permit is held for the whole transfer, including retries, and
+/// released when the task ends (done/error/cancel/pause).
+fn spawn_run(t: Arc<Transfer>, handle: Arc<SshHandle>, sem: Arc<Semaphore>, resume: bool) {
     tauri::async_runtime::spawn(async move {
+        let Ok(_permit) = sem.acquire().await else {
+            return;
+        };
+        // A cancel issued while still queued: bail before opening a channel.
+        if t.cancel.load(Ordering::Relaxed) {
+            *t.status.lock().unwrap() = ("canceled".into(), None);
+            return;
+        }
+        *t.status.lock().unwrap() = ("active".into(), None);
         let mut attempt = 0u32;
         loop {
             let offset = if attempt == 0 && !resume {

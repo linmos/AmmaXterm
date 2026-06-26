@@ -53,6 +53,7 @@ pub fn run() {
             commands::session_stop_log,
             commands::host_key_decision,
             commands::sftp_list,
+            commands::expand_uploads,
             commands::sftp_upload,
             commands::sftp_download,
             commands::sftp_mkdir,
