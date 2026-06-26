@@ -385,6 +385,10 @@ class AppState {
 				onOutput: tab.channel
 			});
 			tab.status = 'connected';
+			// The terminal fitted to its real size during mount while the session
+			// was still connecting, so that resize was dropped (no session id yet).
+			// Push the current size now so the PTY matches the window (vi/nano/tmux).
+			this.resizeTab(tab.key, tab.size);
 		} catch (err) {
 			tab.status = 'error';
 			tab.error = errMessage(err);
@@ -402,6 +406,10 @@ class AppState {
 				onOutput: tab.channel
 			});
 			tab.status = 'connected';
+			// The terminal fitted to its real size during mount while the session
+			// was still connecting, so that resize was dropped (no session id yet).
+			// Push the current size now so the PTY matches the window (vi/nano/tmux).
+			this.resizeTab(tab.key, tab.size);
 			// The site may auto-establish tunnels on connect (PF-4) — reflect them.
 			if (site.tunnels.length) void this.refreshTunnels();
 		} catch (err) {

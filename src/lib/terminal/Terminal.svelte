@@ -129,10 +129,18 @@
 			console.warn('WebGL addon unavailable, falling back to canvas/DOM renderer', e);
 		}
 
-		fit();
-
 		term.onData((data) => onData?.(data));
+		// Register the resize listener BEFORE the first fit so the initial
+		// dimensions reach the backend (PTY size). xterm only emits onResize when
+		// the dimensions actually change, so also report the post-fit size
+		// explicitly — otherwise a container that happens to fit the 80x24 default,
+		// or a fit() whose result equals the current size, would leave the PTY
+		// stuck at the hardcoded default and full-screen apps (vi/nano/tmux) would
+		// render into an 80x24 corner instead of filling the window.
 		term.onResize((size) => onResize?.(size));
+
+		fit();
+		onResize?.({ cols: term.cols, rows: term.rows });
 
 		// Copy-on-select (TM-4): mirror the selection to the clipboard as it's made,
 		// like MobaXterm/PuTTY. Reads the live prop so the toggle applies immediately.
