@@ -1,6 +1,6 @@
 {
   "name": "ammaxterm",
-  "version": "0.4.3",
+  "version": "0.4.4",
   "description": "AmmaXterm — lightweight open-source SSH terminal (Tauri + Svelte)",
   "type": "module",
   "packageManager": "pnpm@11.8.0",
