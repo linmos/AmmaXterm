@@ -570,7 +570,7 @@
 							oncontextmenu={(e) => openMenu(entry, e)}
 						>
 							<span class="top">
-								<span class="name">{entry.is_dir ? '📁' : '📄'} {entry.name}</span>
+								<span class="name">{entry.is_dir ? '📁' : '📄'} {entry.name}{#if entry.is_symlink}<span class="link" title="symlink"> 🔗</span>{/if}</span>
 								{#if !entry.is_dir}<span class="size">{fmtSize(entry.size)}</span>{/if}
 							</span>
 							{#if entry.permissions != null || entry.modified}

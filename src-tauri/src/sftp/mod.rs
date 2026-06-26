@@ -23,6 +23,7 @@ const CHUNK: usize = 32 * 1024;
 pub struct FileEntry {
     pub name: String,
     pub is_dir: bool,
+    pub is_symlink: bool,
     pub size: u64,
     pub permissions: Option<u32>,
     pub modified: Option<u32>,
@@ -55,6 +56,7 @@ pub async fn list_dir(handle: &SshHandle, path: &str) -> AppResult<Vec<FileEntry
             FileEntry {
                 name: entry.file_name(),
                 is_dir: entry.file_type().is_dir(),
+                is_symlink: entry.file_type().is_symlink(),
                 size: md.size.unwrap_or(0),
                 permissions: md.permissions,
                 modified: md.mtime,
@@ -63,6 +65,21 @@ pub async fn list_dir(handle: &SshHandle, path: &str) -> AppResult<Vec<FileEntry
             }
         })
         .collect();
+
+    // `read_dir` reports lstat metadata, so a symlink's `is_dir` is always false
+    // (its type is "symlink"). Follow each link with a stat to learn whether the
+    // target is a directory, so symlinked folders are navigable in the UI.
+    // Broken links keep `is_dir = false`.
+    for entry in entries.iter_mut().filter(|e| e.is_symlink) {
+        let target = if path.ends_with('/') {
+            format!("{path}{}", entry.name)
+        } else {
+            format!("{path}/{}", entry.name)
+        };
+        if let Ok(md) = sftp.metadata(target).await {
+            entry.is_dir = md.file_type().is_dir();
+        }
+    }
 
     entries.sort_by(|a, b| {
         b.is_dir
