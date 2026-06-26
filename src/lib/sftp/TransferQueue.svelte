@@ -14,7 +14,12 @@
 	let speeds = $state<Record<string, number>>({});
 
 	const mine = $derived(app.transfers.filter((t) => t.sessionId === sessionId));
-	const hasFinished = $derived(mine.some((t) => t.status !== 'active'));
+	// "active" is streaming; "queued" is waiting for a free slot — both are in
+	// progress and must not be offered for clearing.
+	const inProgress = (s: string) => s === 'active' || s === 'queued';
+	const hasFinished = $derived(mine.some((t) => !inProgress(t.status)));
+	const doneCount = $derived(mine.filter((t) => t.status === 'done').length);
+	const errorCount = $derived(mine.filter((t) => t.status === 'error').length);
 
 	function tick() {
 		app.refreshTransfers().then(() => {
@@ -41,7 +46,7 @@
 	}
 
 	function clearDone() {
-		for (const t of mine) if (t.status !== 'active') app.clearTransfer(t.id);
+		for (const t of mine) if (!inProgress(t.status)) app.clearTransfer(t.id);
 	}
 
 	onMount(() => {
@@ -55,6 +60,10 @@
 	<div class="queue">
 		<div class="qhead">
 			<strong>{i18n.t('xfer.title')} ({mine.length})</strong>
+			<span class="counts">
+				{#if doneCount}<span class="c ok" title={i18n.t('xfer.done')}>✓ {doneCount}</span>{/if}
+				{#if errorCount}<span class="c bad" title={i18n.t('xfer.error')}>✕ {errorCount}</span>{/if}
+			</span>
 			{#if hasFinished}
 				<button class="clearall" onclick={clearDone}>{i18n.t('xfer.clearDone')}</button>
 			{/if}
@@ -65,7 +74,10 @@
 					<div class="line">
 						<span class="dir">{t.direction === 'upload' ? '⬆' : '⬇'}</span>
 						<span class="nm" title={t.name}>{t.name}</span>
-						{#if t.status === 'active'}
+						{#if t.status === 'queued'}
+							<span class="tag">{i18n.t('xfer.queued')}</span>
+							<button class="x" title={i18n.t('xfer.cancel')} onclick={() => app.cancelTransfer(t.id)}>×</button>
+						{:else if t.status === 'active'}
 							<span class="sp">{speeds[t.id] ? `${fmtBytes(speeds[t.id])}/s` : ''}</span>
 							<button class="rt" title={i18n.t('xfer.pause')} onclick={() => app.pauseTransfer(t.id)}>⏸</button>
 							<button class="x" title={i18n.t('xfer.cancel')} onclick={() => app.cancelTransfer(t.id)}>×</button>
@@ -100,11 +112,27 @@
 	.qhead {
 		display: flex;
 		align-items: center;
-		justify-content: space-between;
+		gap: 8px;
 		padding: 5px 8px;
 		font-size: 12px;
 	}
+	.counts {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+	}
+	.counts .c {
+		font-size: 11px;
+		font-variant-numeric: tabular-nums;
+	}
+	.counts .c.ok {
+		color: var(--vsc-green);
+	}
+	.counts .c.bad {
+		color: var(--vsc-red);
+	}
 	.clearall {
+		margin-left: auto;
 		padding: 2px 8px;
 		border: none;
 		border-radius: 3px;

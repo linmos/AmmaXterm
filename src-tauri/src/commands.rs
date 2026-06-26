@@ -617,6 +617,74 @@ pub fn local_list(path: Option<String>) -> AppResult<LocalListing> {
     })
 }
 
+/// One file to upload: its absolute local path and the remote path relative to
+/// the drop target (forward-slashed, includes the top-level item's name).
+#[derive(serde::Serialize)]
+struct UploadFile {
+    local: String,
+    rel: String,
+}
+
+/// Flat plan for uploading a set of dropped paths: directories to create on the
+/// remote (relative, shallow-first) and the files to transfer.
+#[derive(serde::Serialize)]
+pub struct UploadPlan {
+    dirs: Vec<String>,
+    files: Vec<UploadFile>,
+}
+
+/// Expand dropped local paths into an upload plan, recursing into directories so
+/// a whole folder can be uploaded (FT-5). Files keep their path relative to the
+/// drop, using `/` so the frontend can join them onto the remote directory.
+#[tauri::command]
+pub fn expand_uploads(paths: Vec<String>) -> AppResult<UploadPlan> {
+    let mut plan = UploadPlan {
+        dirs: Vec::new(),
+        files: Vec::new(),
+    };
+    for p in &paths {
+        let path = std::path::Path::new(p);
+        let md = std::fs::metadata(path)
+            .map_err(|e| AppError::Other(format!("cannot read {p}: {e}")))?;
+        let Some(name) = path.file_name().map(|n| n.to_string_lossy().into_owned()) else {
+            continue;
+        };
+        if md.is_dir() {
+            plan.dirs.push(name.clone());
+            walk_uploads(path, &name, &mut plan)?;
+        } else {
+            plan.files.push(UploadFile {
+                local: p.clone(),
+                rel: name,
+            });
+        }
+    }
+    Ok(plan)
+}
+
+/// Recurse a local directory, recording subdirectories (parent-before-child) and
+/// files with their `prefix`-relative, forward-slashed paths.
+fn walk_uploads(dir: &std::path::Path, prefix: &str, plan: &mut UploadPlan) -> AppResult<()> {
+    for entry in std::fs::read_dir(dir).map_err(|e| AppError::Other(e.to_string()))? {
+        let entry = entry.map_err(|e| AppError::Other(e.to_string()))?;
+        let name = entry.file_name().to_string_lossy().into_owned();
+        let rel = format!("{prefix}/{name}");
+        let md = entry
+            .metadata()
+            .map_err(|e| AppError::Other(e.to_string()))?;
+        if md.is_dir() {
+            plan.dirs.push(rel.clone());
+            walk_uploads(&entry.path(), &rel, plan)?;
+        } else {
+            plan.files.push(UploadFile {
+                local: entry.path().to_string_lossy().into_owned(),
+                rel,
+            });
+        }
+    }
+    Ok(())
+}
+
 // --- SFTP transfer queue (FT-4) ---
 
 /// Queue an upload; returns the transfer id (progress via `transfer_list`).

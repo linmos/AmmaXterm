@@ -219,7 +219,8 @@
 	.panel {
 		display: flex;
 		flex-direction: column;
-		height: 100%;
+		/* Fill the space left under `.view-head` (see SftpPanel note). */
+		flex: 1;
 		min-height: 0;
 		background: var(--vsc-sidebar-bg);
 		color: var(--vsc-sidebar-fg);
