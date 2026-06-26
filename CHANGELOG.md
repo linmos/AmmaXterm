@@ -11,6 +11,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Bastion / ProxyJump (multi-hop) and the remaining per-site overrides.
 - PuTTY session import.
 
+## [0.4.3] - 2026-06-26
+
+### Added
+- **SFTP batch delete** — "Delete selected" in the selection bar removes every
+  selected file and folder. Both it and the right-click delete now confirm via a
+  popup dialog; right-clicking an item inside the selection acts on the whole
+  selection.
+
+### Changed
+- **SFTP selection** now follows the desktop file-manager convention: single
+  click selects (folders included), double-click opens a folder or downloads a
+  file. Building a multi-selection no longer enters a folder by accident.
+
+### Fixed
+- **Symlinked directories** in the SFTP pane are now navigable — a symlink that
+  points to a directory is detected by following the link, so it can be opened
+  and is marked with a 🔗 indicator.
+- A folder double-click could land on the wrong row because showing the selection
+  bar reflowed the list between the two clicks; the bar now floats over the list
+  without shifting rows.
+
 ## [0.4.1] - 2026-06-22
 
 ### Fixed

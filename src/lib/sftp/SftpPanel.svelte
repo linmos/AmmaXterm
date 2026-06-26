@@ -23,7 +23,9 @@
 	let newFolder = $state<string | null>(null);
 	let renaming = $state<string | null>(null);
 	let renameValue = $state('');
-	let confirmingDelete = $state<string | null>(null);
+	// Entries pending deletion; non-null shows the confirm dialog. Covers both the
+	// context-menu (single entry) and the selection-bar (batch) delete flows.
+	let deleteTargets = $state<FileEntry[] | null>(null);
 
 	// Multi-select (ctrl/shift) over files for batch operations like download.
 	// Holds selected file names in the current directory; `anchorIdx` is the
@@ -202,15 +204,14 @@
 		);
 	}
 
-	async function del(entry: FileEntry) {
-		if (confirmingDelete !== entry.name) {
-			confirmingDelete = entry.name;
-			return;
-		}
-		confirmingDelete = null;
-		await run(() =>
-			invoke('sftp_delete', { id: sessionId, path: join(path, entry.name), isDir: entry.is_dir })
-		);
+	/** Open the confirm dialog for the given entries (single or batch). */
+	function requestDelete(targets: FileEntry[]) {
+		if (targets.length) deleteTargets = targets;
+	}
+	/** Context-menu delete: act on the whole selection when the clicked row is
+	 *  part of it, otherwise just that row — so it matches "delete selected". */
+	function requestDeleteEntry(entry: FileEntry) {
+		requestDelete(selected.has(entry.name) ? shown.filter((e) => selected.has(e.name)) : [entry]);
 	}
 
 	// Per-row actions: hidden until hover (⋯ button) and on right-click, shown as
@@ -229,7 +230,6 @@
 	}
 	function closeMenu() {
 		menu = null;
-		confirmingDelete = null;
 	}
 	function startRename(entry: FileEntry) {
 		renaming = entry.name;
@@ -239,12 +239,6 @@
 	function act(fn: () => void) {
 		fn();
 		closeMenu();
-	}
-	/** Delete keeps the two-step confirm: first click arms, second deletes. */
-	async function deleteFromMenu(entry: FileEntry) {
-		const wasArmed = confirmingDelete === entry.name;
-		await del(entry);
-		if (wasArmed) menu = null;
 	}
 
 	async function upload() {
@@ -325,28 +319,25 @@
 		cursorIdx = null;
 	}
 
-	/** File names (folders skipped) in the inclusive `shown` index range. */
+	/** All entry names in the inclusive `shown` index range (folders included). */
 	function rangeNames(a: number, b: number): string[] {
 		const [lo, hi] = a <= b ? [a, b] : [b, a];
 		const names: string[] = [];
 		for (let i = lo; i <= hi; i++) {
 			const en = shown[i];
-			if (en && !en.is_dir) names.push(en.name);
+			if (en) names.push(en.name);
 		}
 		return names;
 	}
 
-	/** Row click with selection semantics: plain click on a folder navigates;
-	 *  on a file (plain/ctrl/shift) it drives the multi-select set. */
+	/** Row click with selection semantics. A plain click selects the row (folders
+	 *  and files alike) — navigation is now on double-click, so building a
+	 *  multi-selection never accidentally enters a folder. Ctrl toggles, Shift
+	 *  selects a range. */
 	function rowClick(entry: FileEntry, idx: number, e: MouseEvent) {
 		const mod = e.ctrlKey || e.metaKey;
-		if (entry.is_dir && !mod && !e.shiftKey) {
-			openEntry(entry);
-			return;
-		}
 		scroller?.focus(); // take keyboard focus so arrow keys drive selection
 		cursorIdx = idx;
-		if (entry.is_dir) return; // folders aren't part of a file selection
 		const name = entry.name;
 		if (e.shiftKey && anchorIdx !== null) {
 			// Range from the anchor to here; ctrl extends, otherwise replaces.
@@ -361,6 +352,12 @@
 			selected = new Set([name]);
 			anchorIdx = idx;
 		}
+	}
+
+	/** Double-click activates a row: open a folder, or download a file. */
+	function rowDblClick(entry: FileEntry) {
+		if (entry.is_dir) openEntry(entry);
+		else download(entry);
 	}
 
 	/** Keyboard navigation over the list: Up/Down move the cursor (selecting that
@@ -391,7 +388,7 @@
 		} else {
 			anchorIdx = next;
 			const en = shown[next];
-			selected = en && !en.is_dir ? new Set([en.name]) : new Set();
+			selected = en ? new Set([en.name]) : new Set();
 		}
 		scrollToRow(next);
 	}
@@ -423,6 +420,20 @@
 		for (const f of files) {
 			await app.downloadFile(sessionId, join(path, f.name), joinLocal(dir, f.name));
 		}
+		clearSelection();
+	}
+
+	// Runs on confirm: deletes every pending entry (files and folders). Used by
+	// both the single-entry (context menu) and batch (selection bar) flows.
+	async function confirmDelete() {
+		const targets = deleteTargets ?? [];
+		deleteTargets = null;
+		if (!targets.length) return;
+		await run(async () => {
+			for (const e of targets) {
+				await invoke('sftp_delete', { id: sessionId, path: join(path, e.name), isDir: e.is_dir });
+			}
+		});
 		clearSelection();
 	}
 
@@ -536,18 +547,16 @@
 		<p class="err">{errorMsg}</p>
 	{/if}
 
-	{#if selectedCount > 0}
-		<div class="selbar">
-			<span class="selcount">{i18n.t('sftp.selected').replace('{n}', String(selectedCount))}</span>
-			<button class="primary" onclick={downloadSelected} disabled={busy}>⬇ {i18n.t('sftp.downloadSelected')}</button>
-			<button onclick={clearSelection}>{i18n.t('sftp.clearSelection')}</button>
-		</div>
-	{/if}
-
+	<!-- The selection bar floats over the bottom of the list (absolute, not inline)
+	     so showing it on first-select never reflows the list — otherwise the
+	     rows shift between the two clicks of a double-click and the open lands on
+	     the wrong row. -->
+	<div class="listarea">
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
 	<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
 	<div
 		class="listwrap"
+		class:has-selbar={selectedCount > 0}
 		bind:this={scroller}
 		bind:clientHeight={viewH}
 		tabindex="0"
@@ -567,10 +576,11 @@
 							class:selected={selected.has(entry.name)}
 							class:cursor={cursorIdx === vStart + vi}
 							onclick={(e) => rowClick(entry, vStart + vi, e)}
+							ondblclick={() => rowDblClick(entry)}
 							oncontextmenu={(e) => openMenu(entry, e)}
 						>
 							<span class="top">
-								<span class="name">{entry.is_dir ? '📁' : '📄'} {entry.name}</span>
+								<span class="name">{entry.is_dir ? '📁' : '📄'} {entry.name}{#if entry.is_symlink}<span class="link" title="symlink"> 🔗</span>{/if}</span>
 								{#if !entry.is_dir}<span class="size">{fmtSize(entry.size)}</span>{/if}
 							</span>
 							{#if entry.permissions != null || entry.modified}
@@ -585,6 +595,18 @@
 				{/each}
 			</div>
 		{/if}
+	</div>
+
+	{#if selectedCount > 0}
+		<div class="selbar">
+			<span class="selcount">{i18n.t('sftp.selected').replace('{n}', String(selectedCount))}</span>
+			<button class="primary" onclick={downloadSelected} disabled={busy}>⬇ {i18n.t('sftp.downloadSelected')}</button>
+			<button onclick={() => requestDelete(shown.filter((e) => selected.has(e.name)))} disabled={busy}>
+				🗑 {i18n.t('sftp.deleteSelected')}
+			</button>
+			<button onclick={clearSelection}>{i18n.t('sftp.clearSelection')}</button>
+		</div>
+	{/if}
 	</div>
 
 	{#if menu}
@@ -604,8 +626,8 @@
 			{/if}
 			<button class="ctx-item" onclick={() => act(() => openChmod(target))}>⚙ {i18n.t('sftp.chmod')}</button>
 			<button class="ctx-item" onclick={() => act(() => startRename(target))}>✎ {i18n.t('sftp.rename')}</button>
-			<button class="ctx-item danger" onclick={() => deleteFromMenu(target)}>
-				🗑 {confirmingDelete === target.name ? i18n.t('common.sure') : i18n.t('common.delete')}
+			<button class="ctx-item danger" onclick={() => act(() => requestDeleteEntry(target))}>
+				🗑 {i18n.t('common.delete')}
 			</button>
 		</div>
 	{/if}
@@ -661,6 +683,29 @@
 				<div class="acts">
 					<button class="ghost" onclick={() => (chmodTarget = null)}>{i18n.t('common.cancel')}</button>
 					<button onclick={applyChmod} disabled={busy}>{i18n.t('sftp.apply')}</button>
+				</div>
+			</div>
+		</div>
+	{/if}
+
+	{#if deleteTargets}
+		<div
+			class="modal-backdrop"
+			role="presentation"
+			onclick={(e) => {
+				if (e.target === e.currentTarget) deleteTargets = null;
+			}}
+		>
+			<div class="modal">
+				<h3>{i18n.t('common.delete')}</h3>
+				<p class="sub">
+					{deleteTargets.length === 1
+						? i18n.t('sftp.deleteConfirmOne').replace('{name}', deleteTargets[0].name)
+						: i18n.t('sftp.deleteConfirm').replace('{n}', String(deleteTargets.length))}
+				</p>
+				<div class="acts">
+					<button class="ghost" onclick={() => (deleteTargets = null)}>{i18n.t('common.cancel')}</button>
+					<button class="danger" onclick={confirmDelete} disabled={busy}>{i18n.t('common.delete')}</button>
 				</div>
 			</div>
 		</div>
@@ -776,13 +821,26 @@
 		flex: 1;
 		min-width: 0;
 	}
+	.listarea {
+		position: relative;
+		flex: 1;
+		min-height: 0;
+		display: flex;
+		flex-direction: column;
+	}
 	.selbar {
+		position: absolute;
+		left: 0;
+		right: 0;
+		bottom: 0;
+		z-index: 6;
 		display: flex;
 		align-items: center;
 		gap: 6px;
 		padding: 5px 8px;
-		border-bottom: 1px solid var(--vsc-border);
-		background: rgba(0, 0, 0, 0.18);
+		border-top: 1px solid var(--vsc-border);
+		background: var(--vsc-sidebar-bg);
+		box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.25);
 	}
 	.selbar .selcount {
 		flex: 1;
@@ -815,6 +873,12 @@
 		min-height: 0;
 		overflow: auto;
 		position: relative;
+	}
+	/* Reserve room so the floating selbar never hides the last rows. Padding on
+	   the scroll container doesn't move rows on screen, so it can't disturb a
+	   double-click in progress. */
+	.listwrap.has-selbar {
+		padding-bottom: 40px;
 	}
 	.spacer {
 		position: relative;
@@ -1003,6 +1067,12 @@
 	}
 	.modal .ghost:hover {
 		background: var(--vsc-button-secondary-hover);
+	}
+	.modal .danger {
+		background: var(--vsc-danger, #c4314b);
+	}
+	.modal .danger:hover {
+		background: var(--vsc-danger-hover, #a8293f);
 	}
 	.ctx-scrim {
 		position: fixed;
