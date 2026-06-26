@@ -11,6 +11,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Bastion / ProxyJump (multi-hop) and the remaining per-site overrides.
 - PuTTY session import.
 
+## [0.4.4] - 2026-06-26
+
+### Fixed
+- **Terminal size** is now synced to the window. Full-screen apps (vi, nano,
+  tmux, less) rendered into an 80×24 corner instead of filling the terminal: the
+  PTY stayed at the hardcoded default because the initial fit happened before the
+  resize listener was attached and while the session was still connecting, so the
+  real dimensions never reached the backend. The terminal now reports its size as
+  soon as it fits and again once the session is established.
+
 ## [0.4.3] - 2026-06-26
 
 ### Added
