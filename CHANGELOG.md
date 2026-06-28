@@ -11,6 +11,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Bastion / ProxyJump (multi-hop) and the remaining per-site overrides.
 - PuTTY session import.
 
+## [0.4.5] - 2026-06-28
+
+### Added
+- **SFTP auto-refresh** — the remote listing now reloads automatically when an
+  upload finishes, so a just-uploaded file appears without a manual refresh.
+  Uploads run asynchronously through the transfer queue, which previously left the
+  pane showing stale contents until reloaded by hand.
+
+### Fixed
+- **vi/vim/tmux froze the terminal.** Full-screen apps that switch to the
+  alternate screen buffer left the screen frozen (nano, which doesn't use the
+  alternate buffer, was unaffected). The cause was the xterm WebGL renderer
+  failing to repaint after the alt-buffer switch inside Windows WebView2. Dropped
+  the WebGL addon and fell back to xterm's default DOM renderer.
+
 ## [0.4.4] - 2026-06-26
 
 ### Fixed

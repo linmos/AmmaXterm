@@ -2,7 +2,6 @@
 	import { onMount, onDestroy } from 'svelte';
 	import { Terminal, type ITheme } from '@xterm/xterm';
 	import { FitAddon } from '@xterm/addon-fit';
-	import { WebglAddon } from '@xterm/addon-webgl';
 	import { SearchAddon } from '@xterm/addon-search';
 	import { Unicode11Addon } from '@xterm/addon-unicode11';
 	import '@xterm/xterm/css/xterm.css';
@@ -120,14 +119,12 @@
 
 		term.open(container);
 
-		// WebGL renderer for high-throughput output (PRD §6.2); fall back gracefully.
-		try {
-			const webgl = new WebglAddon();
-			webgl.onContextLoss(() => webgl.dispose());
-			term.loadAddon(webgl);
-		} catch (e) {
-			console.warn('WebGL addon unavailable, falling back to canvas/DOM renderer', e);
-		}
+		// NOTE: no WebGL renderer. The WebGL addon (PRD §6.2 high-throughput) hangs
+		// inside Windows WebView2: when a full-screen app switches to the alternate
+		// screen buffer (vi/vim/tmux/less via CSI ?1049h) the WebGL context stops
+		// repainting, so the screen freezes. Non-alt-buffer apps (nano) are fine,
+		// which is why the bug looked vi-specific. xterm's default DOM renderer is
+		// reliable here and fast enough for interactive SSH.
 
 		term.onData((data) => onData?.(data));
 		// Register the resize listener BEFORE the first fit so the initial
