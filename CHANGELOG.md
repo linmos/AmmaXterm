@@ -11,6 +11,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Bastion / ProxyJump (multi-hop) and the remaining per-site overrides.
 - PuTTY session import.
 
+## [0.4.6] - 2026-06-28
+
+### Added
+- **SFTP folder download.** Whole directories can now be downloaded (recursively),
+  mirroring folder upload — via the context menu, the selection bar, or the
+  single-entry download. Previously only individual files could be fetched.
+- **Drag-to-select in the SFTP listing.** Press and drag over the file list to
+  box-select rows like a file manager. The drag may start on a row or the empty
+  background; ordinary click / ctrl / shift / double-click are unchanged, and
+  dragging near an edge auto-scrolls.
+
+### Changed
+- **SFTP panel follows the terminal's connection.** When a session drops, the
+  file panel now goes offline (overlay + disabled controls) instead of showing a
+  stale listing whose operations silently fail; a reconnect restores it.
+- Renamed the selection bar's **"Clear"** action to **"Cancel"**.
+
 ## [0.4.5] - 2026-06-28
 
 ### Added
