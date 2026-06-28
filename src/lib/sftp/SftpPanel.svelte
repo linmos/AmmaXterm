@@ -14,6 +14,15 @@
 	}
 	let { sessionId }: Props = $props();
 
+	// File operations need a live session, so track the owning terminal tab's state
+	// directly: when it drops the panel goes offline (operations disabled) rather
+	// than failing silently against a dead session. A reconnect assigns a new
+	// session id, which rebuilds this whole panel (it is keyed on the id), so a
+	// fresh listing happens automatically on revival.
+	const offline = $derived(
+		app.tabs.find((t) => t.sessionId === sessionId)?.status !== 'connected'
+	);
+
 	let path = $state('.');
 	let entries = $state<FileEntry[]>([]);
 	let errorMsg = $state<string | undefined>(undefined);
@@ -166,6 +175,7 @@
 	}
 
 	async function list() {
+		if (offline) return;
 		loading = true;
 		errorMsg = undefined;
 		clearSelection();
@@ -277,6 +287,7 @@
 	let conflictApplyAll = $state(false);
 
 	async function uploadFiles(paths: string[]) {
+		if (offline) return;
 		// Expand any dropped folders into their files + the dirs to create, so a
 		// whole directory can be uploaded (not just flat files).
 		let plan: { dirs: string[]; files: { local: string; rel: string }[] };
@@ -435,6 +446,7 @@
 	/** Download the given entries (files and/or folders) into `destDir`, recursing
 	 *  remote folders so their whole tree is fetched (mirrors folder upload). */
 	async function downloadInto(targets: FileEntry[], destDir: string) {
+		if (offline) return;
 		const paths = targets.map((e) => join(path, e.name));
 		let plan: { dirs: string[]; files: { remote: string; rel: string }[] };
 		try {
@@ -487,6 +499,7 @@
 	}
 
 	async function download(entry: FileEntry) {
+		if (offline) return;
 		// A folder downloads its whole tree into a chosen destination directory.
 		if (entry.is_dir) {
 			let dir = dual && localPath ? localPath : null;
@@ -558,18 +571,19 @@
 		<div class="dropzone">{i18n.t('sftp.drop')}</div>
 	{/if}
 	<div class="bar">
-		<button onclick={up} title={i18n.t('sftp.up')} disabled={busy}>↑</button>
+		<button onclick={up} title={i18n.t('sftp.up')} disabled={busy || offline}>↑</button>
 		<input
 			class="path"
 			aria-label="path"
 			bind:value={path}
+			disabled={offline}
 			onkeydown={(e) => e.key === 'Enter' && list()}
 		/>
-		<button onclick={() => (newFolder = '')} title={i18n.t('sftp.newFolder')} disabled={busy}>＋</button>
-		<button onclick={upload} title={i18n.t('sftp.upload')} disabled={busy}>⬆</button>
-		<button class:on={dual} onclick={() => (dual = !dual)} title={i18n.t('sftp.dual')}>⇆</button>
-		<button class:on={followCd} onclick={toggleFollowCd} title={i18n.t('sftp.followCd')}>📍</button>
-		<button onclick={list} title={i18n.t('sftp.refresh')} disabled={loading || busy}>⟳</button>
+		<button onclick={() => (newFolder = '')} title={i18n.t('sftp.newFolder')} disabled={busy || offline}>＋</button>
+		<button onclick={upload} title={i18n.t('sftp.upload')} disabled={busy || offline}>⬆</button>
+		<button class:on={dual} onclick={() => (dual = !dual)} title={i18n.t('sftp.dual')} disabled={offline}>⇆</button>
+		<button class:on={followCd} onclick={toggleFollowCd} title={i18n.t('sftp.followCd')} disabled={offline}>📍</button>
+		<button onclick={list} title={i18n.t('sftp.refresh')} disabled={loading || busy || offline}>⟳</button>
 	</div>
 
 	{#if dual}
@@ -616,6 +630,9 @@
 	     rows shift between the two clicks of a double-click and the open lands on
 	     the wrong row. -->
 	<div class="listarea">
+	{#if offline}
+		<div class="offline">{i18n.t('sftp.disconnected')}</div>
+	{/if}
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
 	<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
 	<div
@@ -1189,5 +1206,21 @@
 	.empty {
 		padding: 8px;
 		opacity: 0.5;
+	}
+	/* Covers the file listing while the session is down so stale rows can't be
+	   acted on; the transfer queue below stays visible. */
+	.offline {
+		position: absolute;
+		inset: 0;
+		z-index: 7;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		padding: 16px;
+		text-align: center;
+		background: var(--vsc-sidebar-bg);
+		color: var(--vsc-sidebar-fg);
+		opacity: 0.92;
+		font-size: 12px;
 	}
 </style>
