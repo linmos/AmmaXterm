@@ -425,10 +425,39 @@
 		}
 	}
 
-	/** Batch-download every selected file into one destination folder. */
+	/** Join a '/'-separated relative path onto a local destination folder, using
+	 *  the destination's own separator so nested folder downloads land correctly. */
+	function destPath(root: string, rel: string): string {
+		const sep = root.includes('\\') ? '\\' : '/';
+		return root.replace(/[\\/]+$/, '') + sep + rel.split('/').join(sep);
+	}
+
+	/** Download the given entries (files and/or folders) into `destDir`, recursing
+	 *  remote folders so their whole tree is fetched (mirrors folder upload). */
+	async function downloadInto(targets: FileEntry[], destDir: string) {
+		const paths = targets.map((e) => join(path, e.name));
+		let plan: { dirs: string[]; files: { remote: string; rel: string }[] };
+		try {
+			plan = await invoke('expand_downloads', { id: sessionId, paths });
+		} catch (err) {
+			errorMsg = (err as { message?: string })?.message ?? String(err);
+			return;
+		}
+		// Create the local directory tree first (covers empty folders too); files
+		// also create their own parents server-side, so swallow errors here.
+		if (plan.dirs.length) {
+			const dirs = plan.dirs.map((d) => destPath(destDir, d));
+			await invoke('make_local_dirs', { paths: dirs }).catch(() => {});
+		}
+		for (const f of plan.files) {
+			await app.downloadFile(sessionId, f.remote, destPath(destDir, f.rel));
+		}
+	}
+
+	/** Batch-download every selected entry (files and folders) into one folder. */
 	async function downloadSelected() {
-		const files = shown.filter((e) => !e.is_dir && selected.has(e.name));
-		if (!files.length) return;
+		const items = shown.filter((e) => selected.has(e.name));
+		if (!items.length) return;
 		let dir = dual && localPath ? localPath : null;
 		if (!dir) {
 			const picked = await open({
@@ -439,9 +468,7 @@
 			if (typeof picked !== 'string') return;
 			dir = picked;
 		}
-		for (const f of files) {
-			await app.downloadFile(sessionId, join(path, f.name), joinLocal(dir, f.name));
-		}
+		await downloadInto(items, dir);
 		clearSelection();
 	}
 
@@ -460,6 +487,21 @@
 	}
 
 	async function download(entry: FileEntry) {
+		// A folder downloads its whole tree into a chosen destination directory.
+		if (entry.is_dir) {
+			let dir = dual && localPath ? localPath : null;
+			if (!dir) {
+				const picked = await open({
+					directory: true,
+					multiple: false,
+					title: `${i18n.t('sftp.download')} ${entry.name}`
+				});
+				if (typeof picked !== 'string') return;
+				dir = picked;
+			}
+			await downloadInto([entry], dir);
+			return;
+		}
 		// In dual-pane mode download straight into the local pane's folder.
 		if (dual && localPath) {
 			await app.downloadFile(sessionId, join(path, entry.name), localJoin(entry.name));
@@ -643,9 +685,7 @@
 		></button>
 		{@const target = menu.entry}
 		<div class="ctx" style="left:{menu.x}px; top:{menu.y}px">
-			{#if !target.is_dir}
-				<button class="ctx-item" onclick={() => act(() => download(target))}>⬇ {i18n.t('sftp.download')}</button>
-			{/if}
+			<button class="ctx-item" onclick={() => act(() => download(target))}>⬇ {i18n.t('sftp.download')}</button>
 			<button class="ctx-item" onclick={() => act(() => openChmod(target))}>⚙ {i18n.t('sftp.chmod')}</button>
 			<button class="ctx-item" onclick={() => act(() => startRename(target))}>✎ {i18n.t('sftp.rename')}</button>
 			<button class="ctx-item danger" onclick={() => act(() => requestDeleteEntry(target))}>

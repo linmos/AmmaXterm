@@ -79,6 +79,8 @@ pub fn run() {
             commands::tunnel_list,
             commands::transfer_upload,
             commands::transfer_download,
+            commands::expand_downloads,
+            commands::make_local_dirs,
             commands::transfer_list,
             commands::transfer_cancel,
             commands::transfer_pause,
