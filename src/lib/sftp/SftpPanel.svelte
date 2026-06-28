@@ -169,6 +169,131 @@
 	const vEnd = $derived(Math.min(shown.length, Math.ceil((scrollTop + viewH) / ROW_H) + OVERSCAN));
 	const visible = $derived(shown.slice(vStart, vEnd));
 
+	// Rubber-band (marquee) selection, like a file manager: press and drag over the
+	// list to box-select rows. The drag can start on a row or on the empty
+	// background (the narrow pane often has no empty space), so a press is only
+	// "armed" on mousedown and becomes a marquee once the pointer moves past a
+	// small threshold — a press without movement stays an ordinary click.
+	// Coordinates are in the scroller's content space (relative to the spacer) so
+	// the box tracks scrolling and selects rows that aren't even rendered.
+	let marquee = $state<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
+	let pending: { x: number; y: number; mod: boolean; onRow: boolean } | null = null;
+	let marqueeBase = new Set<string>(); // existing selection to merge with (ctrl/shift-drag)
+	let suppressClick = false; // swallow the row click that ends a drag gesture
+	let pointer = { x: 0, y: 0 }; // last cursor position, for edge auto-scroll
+	let autoScrollRaf = 0;
+	const marqueeRect = $derived(
+		marquee
+			? {
+					left: Math.min(marquee.x0, marquee.x1),
+					top: Math.min(marquee.y0, marquee.y1),
+					width: Math.abs(marquee.x1 - marquee.x0),
+					height: Math.abs(marquee.y1 - marquee.y0)
+				}
+			: null
+	);
+
+	/** Cursor position in the scroller's content space (accounts for scrolling). */
+	function contentPoint(clientX: number, clientY: number): { x: number; y: number } {
+		const r = scroller?.getBoundingClientRect();
+		if (!r || !scroller) return { x: 0, y: 0 };
+		return { x: clientX - r.left + scroller.scrollLeft, y: clientY - r.top + scroller.scrollTop };
+	}
+
+	/** Select every row whose band intersects the marquee, merged with the base. */
+	function applyMarquee() {
+		if (!marquee) return;
+		const minY = Math.min(marquee.y0, marquee.y1);
+		const maxY = Math.max(marquee.y0, marquee.y1);
+		const lo = Math.max(0, Math.floor(minY / ROW_H));
+		const hi = Math.min(shown.length - 1, Math.floor((maxY - 0.001) / ROW_H));
+		const names = new Set(marqueeBase);
+		for (let i = lo; i <= hi; i++) {
+			const en = shown[i];
+			if (en) names.add(en.name);
+		}
+		selected = names;
+	}
+
+	function startMarquee(e: MouseEvent) {
+		if (offline || e.button !== 0 || !scroller) return;
+		const r = scroller.getBoundingClientRect();
+		// Ignore presses on the native scrollbar (beyond the content width).
+		if (e.clientX > r.left + scroller.clientWidth) return;
+		suppressClick = false;
+		pending = {
+			x: e.clientX,
+			y: e.clientY,
+			mod: e.ctrlKey || e.metaKey || e.shiftKey,
+			onRow: !!(e.target as HTMLElement | null)?.closest('.row')
+		};
+		pointer = { x: e.clientX, y: e.clientY };
+		window.addEventListener('mousemove', onMarqueeMove);
+		window.addEventListener('mouseup', endMarquee);
+	}
+
+	function onMarqueeMove(e: MouseEvent) {
+		pointer = { x: e.clientX, y: e.clientY };
+		// Promote the armed press into a marquee once it clears the threshold.
+		if (!marquee) {
+			if (!pending) return;
+			if (Math.abs(e.clientX - pending.x) <= 3 && Math.abs(e.clientY - pending.y) <= 3) return;
+			marqueeBase = pending.mod ? new Set(selected) : new Set();
+			const sp = contentPoint(pending.x, pending.y);
+			marquee = { x0: sp.x, y0: sp.y, x1: sp.x, y1: sp.y };
+			// Anchor keyboard/shift navigation at the row the drag began on.
+			const startIdx = Math.min(shown.length - 1, Math.max(0, Math.floor(sp.y / ROW_H)));
+			anchorIdx = startIdx;
+			cursorIdx = startIdx;
+			scroller?.focus();
+			window.getSelection()?.removeAllRanges();
+			autoScrollRaf = requestAnimationFrame(autoScrollTick);
+		}
+		const p = contentPoint(e.clientX, e.clientY);
+		marquee = { ...marquee, x1: p.x, y1: p.y };
+		applyMarquee();
+		e.preventDefault();
+	}
+
+	function endMarquee() {
+		window.removeEventListener('mousemove', onMarqueeMove);
+		window.removeEventListener('mouseup', endMarquee);
+		cancelAnimationFrame(autoScrollRaf);
+		autoScrollRaf = 0;
+		if (marquee) {
+			// A real drag finished; the trailing click on the start row is bogus.
+			suppressClick = true;
+		} else if (pending && !pending.onRow && !pending.mod) {
+			// Bare click on empty background → deselect, like a file manager.
+			clearSelection();
+		}
+		marquee = null;
+		pending = null;
+	}
+
+	// While dragging near the top/bottom edge, keep scrolling so the marquee can
+	// reach rows beyond the viewport (the pointer may sit still at the edge).
+	function autoScrollTick() {
+		if (!marquee || !scroller) {
+			autoScrollRaf = 0;
+			return;
+		}
+		const r = scroller.getBoundingClientRect();
+		const EDGE = 28;
+		const MAX = 20;
+		let dy = 0;
+		if (pointer.y < r.top + EDGE) dy = -Math.ceil(((r.top + EDGE - pointer.y) / EDGE) * MAX);
+		else if (pointer.y > r.bottom - EDGE) dy = Math.ceil(((pointer.y - (r.bottom - EDGE)) / EDGE) * MAX);
+		if (dy !== 0) {
+			scroller.scrollTop += dy;
+			scrollTop = scroller.scrollTop;
+			const p = contentPoint(pointer.x, pointer.y);
+			marquee = { ...marquee, x1: p.x, y1: p.y };
+			applyMarquee();
+		}
+		autoScrollRaf = requestAnimationFrame(autoScrollTick);
+	}
+
 	function join(dir: string, name: string): string {
 		if (dir === '.' || dir === '') return name;
 		return dir.replace(/\/+$/, '') + '/' + name;
@@ -368,6 +493,11 @@
 	 *  multi-selection never accidentally enters a folder. Ctrl toggles, Shift
 	 *  selects a range. */
 	function rowClick(entry: FileEntry, idx: number, e: MouseEvent) {
+		// Ignore the synthetic click that fires after a marquee drag releases.
+		if (suppressClick) {
+			suppressClick = false;
+			return;
+		}
 		const mod = e.ctrlKey || e.metaKey;
 		scroller?.focus(); // take keyboard focus so arrow keys drive selection
 		cursorIdx = idx;
@@ -563,7 +693,13 @@
 			})
 			.then((un) => (unlistenDrop = un));
 	});
-	onDestroy(() => unlistenDrop?.());
+	onDestroy(() => {
+		unlistenDrop?.();
+		// Tear down a marquee drag if the panel unmounts mid-drag (e.g. reconnect).
+		window.removeEventListener('mousemove', onMarqueeMove);
+		window.removeEventListener('mouseup', endMarquee);
+		if (autoScrollRaf) cancelAnimationFrame(autoScrollRaf);
+	});
 </script>
 
 <div class="sftp" bind:this={panelEl}>
@@ -638,10 +774,12 @@
 	<div
 		class="listwrap"
 		class:has-selbar={selectedCount > 0}
+		class:marqueeing={marquee !== null}
 		bind:this={scroller}
 		bind:clientHeight={viewH}
 		tabindex="0"
 		onkeydown={onListKeydown}
+		onmousedown={startMarquee}
 		onscroll={() => (scrollTop = scroller?.scrollTop ?? 0)}
 	>
 		{#if !shown.length && !loading && !errorMsg}
@@ -649,6 +787,12 @@
 		{:else}
 			<!-- Spacer sized to the full list; only the visible window is rendered. -->
 			<div class="spacer" style="height:{shown.length * ROW_H}px">
+				{#if marqueeRect}
+					<div
+						class="marquee"
+						style="left:{marqueeRect.left}px; top:{marqueeRect.top}px; width:{marqueeRect.width}px; height:{marqueeRect.height}px"
+					></div>
+				{/if}
 				{#each visible as entry, vi (entry.name)}
 					<div class="vrow" style="top:{(vStart + vi) * ROW_H}px; height:{ROW_H}px">
 						<button
@@ -958,6 +1102,20 @@
 	   double-click in progress. */
 	.listwrap.has-selbar {
 		padding-bottom: 40px;
+	}
+	/* While box-selecting, suppress native text selection of the row labels. */
+	.listwrap.marqueeing {
+		user-select: none;
+		cursor: crosshair;
+	}
+	/* The rubber-band rectangle, drawn in the spacer's content space so it tracks
+	   scrolling. pointer-events:none so it never swallows the drag. */
+	.marquee {
+		position: absolute;
+		z-index: 5;
+		border: 1px solid var(--vsc-button-bg);
+		background: rgba(14, 99, 156, 0.18);
+		pointer-events: none;
 	}
 	.spacer {
 		position: relative;
