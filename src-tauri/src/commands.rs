@@ -717,6 +717,28 @@ pub async fn transfer_download(
         .await
 }
 
+/// Expand selected remote paths into a download plan, recursing into folders so a
+/// whole directory can be downloaded (FT-5, mirrors `expand_uploads`).
+#[tauri::command]
+pub async fn expand_downloads(
+    id: String,
+    paths: Vec<String>,
+    manager: State<'_, SessionManager>,
+) -> AppResult<crate::sftp::DownloadPlan> {
+    let handle = manager.handle(&id)?;
+    crate::sftp::expand_download(&handle, &paths).await
+}
+
+/// Create local directories (parents included) for a folder download.
+#[tauri::command]
+pub fn make_local_dirs(paths: Vec<String>) -> AppResult<()> {
+    for p in &paths {
+        std::fs::create_dir_all(p)
+            .map_err(|e| AppError::Other(format!("cannot create {p}: {e}")))?;
+    }
+    Ok(())
+}
+
 /// List all transfers (queue panel).
 #[tauri::command]
 pub fn transfer_list(transfers: State<'_, TransferManager>) -> Vec<TransferInfo> {

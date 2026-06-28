@@ -152,6 +152,7 @@ pub async fn download_streaming(
     pause: &AtomicBool,
     offset: u64,
 ) -> AppResult<()> {
+    ensure_local_parent(local_path).await;
     let sftp = open(handle).await?;
     let mut remote = sftp
         .open_with_flags(remote_path, OpenFlags::READ)
@@ -202,6 +203,7 @@ pub async fn upload(handle: &SshHandle, local_path: &str, remote_path: &str) -> 
 
 /// Download a remote file to a local path (FT-2).
 pub async fn download(handle: &SshHandle, remote_path: &str, local_path: &str) -> AppResult<()> {
+    ensure_local_parent(local_path).await;
     let sftp = open(handle).await?;
     let mut file = sftp
         .open_with_flags(remote_path, OpenFlags::READ)
@@ -210,6 +212,83 @@ pub async fn download(handle: &SshHandle, remote_path: &str, local_path: &str) -
     let mut buf = Vec::new();
     file.read_to_end(&mut buf).await?;
     tokio::fs::write(local_path, &buf).await?;
+    Ok(())
+}
+
+/// Create the parent directory tree for a local download target so a file
+/// inside a downloaded folder lands even if the dir wasn't pre-created.
+/// Best-effort: a failure here surfaces as the file's own create error.
+async fn ensure_local_parent(local_path: &str) {
+    if let Some(parent) = std::path::Path::new(local_path).parent() {
+        if !parent.as_os_str().is_empty() {
+            let _ = tokio::fs::create_dir_all(parent).await;
+        }
+    }
+}
+
+/// One remote file to download, with its path relative to the download root.
+#[derive(Serialize)]
+pub struct DownloadFile {
+    pub remote: String,
+    pub rel: String,
+}
+
+/// A remote tree expanded for download: directories to create locally
+/// (parent-before-child) and the files within them. Mirrors `expand_uploads`
+/// so a whole folder can be downloaded, not just flat files (FT-5).
+#[derive(Serialize)]
+pub struct DownloadPlan {
+    pub dirs: Vec<String>,
+    pub files: Vec<DownloadFile>,
+}
+
+/// Expand selected remote paths into a download plan, recursing into directories.
+/// `rel` paths use `/` and are rooted at each selected entry's own name, matching
+/// the upload side so the frontend can join them onto a local destination folder.
+/// Symlinks are treated as files (their target's bytes are fetched), which also
+/// avoids cycles.
+pub async fn expand_download(handle: &SshHandle, paths: &[String]) -> AppResult<DownloadPlan> {
+    let sftp = open(handle).await?;
+    let mut plan = DownloadPlan {
+        dirs: Vec::new(),
+        files: Vec::new(),
+    };
+    for p in paths {
+        let base = p.trim_end_matches('/');
+        let name = base.rsplit('/').next().unwrap_or(base).to_string();
+        let md = sftp.metadata(p).await.map_err(sftp_err)?;
+        if md.file_type().is_dir() {
+            plan.dirs.push(name.clone());
+            walk_download(&sftp, base, &name, &mut plan).await?;
+        } else {
+            plan.files.push(DownloadFile {
+                remote: p.clone(),
+                rel: name,
+            });
+        }
+    }
+    Ok(plan)
+}
+
+/// Recurse a remote directory, recording subdirectories (parent-before-child) and
+/// files with their `prefix`-relative, forward-slashed paths.
+async fn walk_download(
+    sftp: &SftpSession,
+    dir: &str,
+    prefix: &str,
+    plan: &mut DownloadPlan,
+) -> AppResult<()> {
+    for entry in sftp.read_dir(dir).await.map_err(sftp_err)? {
+        let name = entry.file_name();
+        let child = format!("{dir}/{name}");
+        let rel = format!("{prefix}/{name}");
+        if entry.file_type().is_dir() {
+            plan.dirs.push(rel.clone());
+            Box::pin(walk_download(sftp, &child, &rel, plan)).await?;
+        } else {
+            plan.files.push(DownloadFile { remote: child, rel });
+        }
+    }
     Ok(())
 }
 
