@@ -60,6 +60,28 @@
 			}
 		});
 	});
+	// Auto-refresh the listing when an upload for this session finishes. Uploads
+	// run async through the transfer queue (polled by TransferQueue), so without
+	// this a just-uploaded file doesn't appear until a manual refresh. Track the
+	// completed uploads we've already reacted to; the ones present on first run
+	// are ignored so mounting doesn't fire a redundant reload.
+	let seenUploads = new Set<string>();
+	let uploadsPrimed = false;
+	$effect(() => {
+		const done = app.transfers.filter(
+			(t) => t.sessionId === sessionId && t.direction === 'upload' && t.status === 'done'
+		);
+		let fresh = false;
+		for (const t of done) {
+			if (!seenUploads.has(t.id)) {
+				seenUploads.add(t.id);
+				if (uploadsPrimed) fresh = true;
+			}
+		}
+		uploadsPrimed = true;
+		if (fresh) untrack(() => list());
+	});
+
 	function joinLocal(dir: string, name: string): string {
 		const sep = dir.includes('\\') ? '\\' : '/';
 		return dir.replace(/[\\/]+$/, '') + sep + name;
