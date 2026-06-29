@@ -28,4 +28,18 @@ export default defineConfig(async () => ({
       ignored: ["**/src-tauri/**"],
     },
   },
+
+  build: {
+    // Minify with terser, not esbuild. xterm 6.0.0 ships its `const enum` (e.g.
+    // the DECRPM states in `requestMode`) as a runtime enum, and esbuild's
+    // minifier drops the enum holder's `var` declaration, emitting
+    // `void 0 || (i = {})` where `i` is never declared. ES modules are always in
+    // strict mode, so that throws `ReferenceError: i is not defined` the first
+    // time xterm answers a DECRQM query (which vi/vim/tmux/less send on startup),
+    // crashing xterm's write loop and freezing the whole terminal. Only the
+    // packaged build minifies, which is why `tauri dev` looked fine. Terser
+    // minifies the same code correctly. The JSDoc cast keeps checkJs happy: a
+    // bare "terser" widens to `string` and fails Vite's literal-union type.
+    minify: /** @type {'terser'} */ ('terser')
+  }
 }));

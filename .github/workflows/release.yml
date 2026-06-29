@@ -37,6 +37,28 @@ jobs:
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
 
+      # Pull the section for this tag out of CHANGELOG.md so the GitHub Release
+      # (and the updater's latest.json `notes`) shows the actual changes instead
+      # of being blank. Runs under Git Bash on the Windows runner too.
+      - name: Extract changelog notes for this release
+        id: changelog
+        shell: bash
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          notes="$(awk -v ver="$version" '
+            $0 ~ "^## \\[" ver "\\]" { capture = 1; next }
+            capture && /^## \[/ { exit }
+            capture { if (started || $0 != "") { started = 1; print } }
+          ' CHANGELOG.md)"
+          if [ -z "$notes" ]; then
+            notes="See CHANGELOG.md for the full list of changes."
+          fi
+          {
+            echo "notes<<__CHANGELOG_EOF__"
+            echo "$notes"
+            echo "__CHANGELOG_EOF__"
+          } >> "$GITHUB_OUTPUT"
+
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -47,5 +69,6 @@ jobs:
         with:
           tagName: ${{ github.ref_name }}
           releaseName: AmmaXterm ${{ github.ref_name }}
+          releaseBody: ${{ steps.changelog.outputs.notes }}
           releaseDraft: true
           prerelease: false
