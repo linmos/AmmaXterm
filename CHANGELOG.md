@@ -11,6 +11,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Bastion / ProxyJump (multi-hop) and the remaining per-site overrides.
 - PuTTY session import.
 
+## [0.4.7] - 2026-06-29
+
+### Fixed
+- **Full-screen apps (vi/vim/tmux/less) still froze the packaged terminal.**
+  0.4.5's WebGL-renderer removal fixed the freeze under `tauri dev` but not in the
+  shipped build. The real cause was the production minifier: esbuild dropped the
+  `var` declaration of an xterm `const enum` holder, emitting `void 0 || (i = {})`
+  with `i` undeclared. ES modules run in strict mode, so that threw
+  `ReferenceError: i is not defined` the first time xterm answered a DECRQM query
+  — which vi/vim/tmux/less send on startup — crashing xterm's write loop and
+  freezing the terminal. Switched the Vite minifier from esbuild to terser.
+
+### Changed
+- The GitHub Release body and the updater's `latest.json` notes are now
+  auto-populated from this changelog (they were previously blank).
+
 ## [0.4.6] - 2026-06-28
 
 ### Added
