@@ -15,6 +15,8 @@ export interface Settings {
 	keepaliveSecs: number;
 	autoReconnect: boolean;
 	copyOnSelect: boolean;
+	/** External editor command for SFTP "edit"; empty = OS default association. */
+	externalEditor: string;
 	// AI assistant (multi-provider, BYO key).
 	aiEnabled: boolean;
 	aiProvider: string;
@@ -71,6 +73,7 @@ const DEFAULTS: Settings = {
 	keepaliveSecs: 30,
 	autoReconnect: false,
 	copyOnSelect: true,
+	externalEditor: '',
 	aiEnabled: false,
 	aiProvider: 'claude',
 	aiModel: 'claude-sonnet-4-6',

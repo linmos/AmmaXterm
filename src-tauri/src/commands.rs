@@ -286,6 +286,27 @@ pub async fn sftp_chmod(
     crate::sftp::chmod(&handle, &path, mode).await
 }
 
+/// Open a remote file for editing (FT-11): download it to a local temp copy,
+/// launch the configured external editor (or the OS default), and watch the
+/// copy — re-uploading it to the remote on each save.
+#[tauri::command]
+pub async fn sftp_edit_open(
+    app: AppHandle,
+    id: String,
+    remote_path: String,
+    settings: State<'_, SettingsStore>,
+) -> AppResult<()> {
+    let editor = settings.get().external_editor;
+    crate::edit::open_for_edit(app, id, remote_path, editor).await
+}
+
+/// Upload an edited file's temp copy back to the remote (FT-11), after the user
+/// confirms a save detected by the edit watcher.
+#[tauri::command]
+pub async fn sftp_edit_upload(app: AppHandle, id: String, remote_path: String) -> AppResult<()> {
+    crate::edit::upload_saved(app, id, remote_path).await
+}
+
 /// Delete a remote file or directory (recursive for dirs) (FT-3).
 #[tauri::command]
 pub async fn sftp_delete(

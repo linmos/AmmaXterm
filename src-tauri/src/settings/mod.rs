@@ -69,6 +69,11 @@ pub struct Settings {
     /// Copy the terminal selection to the clipboard as soon as it is made (TM-4).
     #[serde(default = "default_copy_on_select")]
     pub copy_on_select: bool,
+    /// External editor command for "edit remote file" (FT-11). Empty = open with
+    /// the OS default association. May include args; `{file}` is substituted with
+    /// the path, otherwise the path is appended (e.g. `code -w`, `notepad`).
+    #[serde(default)]
+    pub external_editor: String,
 
     // --- AI assistant (multi-provider, BYO key) ---
     /// Master switch for the AI assistant feature (AI-1); off by default.
@@ -109,6 +114,7 @@ impl Default for Settings {
             keepalive_secs: default_keepalive(),
             auto_reconnect: false,
             copy_on_select: default_copy_on_select(),
+            external_editor: String::new(),
             ai_enabled: false,
             ai_provider: default_ai_provider(),
             ai_model: default_ai_model(),
