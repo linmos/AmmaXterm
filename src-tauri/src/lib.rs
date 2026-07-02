@@ -1,5 +1,6 @@
 mod ai;
 mod commands;
+mod edit;
 mod error;
 mod importer;
 mod keygen;
@@ -14,6 +15,7 @@ mod tunnel;
 mod vault;
 
 use ai::AiManager;
+use edit::EditManager;
 use session::SessionManager;
 use settings::SettingsStore;
 use store::SiteStore;
@@ -34,6 +36,7 @@ pub fn run() {
         .manage(TunnelManager::new())
         .manage(TransferManager::new())
         .manage(AiManager::default())
+        .manage(EditManager::default())
         .manage(VaultState::default())
         .manage(ssh::HostKeyPrompts::default())
         .setup(|app| {
@@ -60,6 +63,8 @@ pub fn run() {
             commands::sftp_rename,
             commands::sftp_delete,
             commands::sftp_chmod,
+            commands::sftp_edit_open,
+            commands::sftp_edit_upload,
             commands::site_list,
             commands::site_add,
             commands::site_update,

@@ -18,6 +18,7 @@
 	let keepaliveSecs = $state(init.keepaliveSecs);
 	let autoReconnect = $state(init.autoReconnect);
 	let copyOnSelect = $state(init.copyOnSelect);
+	let externalEditor = $state(init.externalEditor);
 	// AI assistant settings.
 	let aiEnabled = $state(init.aiEnabled);
 	let aiProvider = $state(init.aiProvider);
@@ -91,6 +92,7 @@
 			keepaliveSecs: Number(keepaliveSecs),
 			autoReconnect,
 			copyOnSelect,
+			externalEditor: externalEditor.trim(),
 			aiEnabled,
 			aiProvider,
 			aiModel: aiModel.trim() || MODEL_PLACEHOLDER[aiProvider] || aiModel,
@@ -158,6 +160,10 @@
 		<label class="check">
 			<input type="checkbox" bind:checked={autoReconnect} />
 			{i18n.t('settings.autoReconnect')}
+		</label>
+		<label>
+			{i18n.t('settings.externalEditor')} <span class="hint">{i18n.t('settings.externalEditorHint')}</span>
+			<input bind:value={externalEditor} placeholder={i18n.t('settings.externalEditorPlaceholder')} />
 		</label>
 
 		<h3>{i18n.t('settings.aiSection')}</h3>

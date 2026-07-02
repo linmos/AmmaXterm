@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount, onDestroy, untrack } from 'svelte';
 	import { invoke } from '@tauri-apps/api/core';
+	import { listen } from '@tauri-apps/api/event';
 	import { getCurrentWebview } from '@tauri-apps/api/webview';
 	import { open, save } from '@tauri-apps/plugin-dialog';
 	import { app } from '$lib/state.svelte';
@@ -378,7 +379,7 @@
 		e.preventDefault();
 		e.stopPropagation();
 		const W = 180;
-		const H = 168;
+		const H = 208;
 		menu = {
 			entry,
 			x: Math.min(e.clientX, window.innerWidth - W),
@@ -391,6 +392,17 @@
 	function startRename(entry: FileEntry) {
 		renaming = entry.name;
 		renameValue = entry.name;
+	}
+	/** Open a remote file in the external editor: the backend downloads it to a
+	 *  temp copy and re-uploads on every save (FT-11). */
+	async function editFile(entry: FileEntry) {
+		if (offline || entry.is_dir) return;
+		errorMsg = undefined;
+		try {
+			await invoke('sftp_edit_open', { id: sessionId, remotePath: join(path, entry.name) });
+		} catch (err) {
+			errorMsg = (err as { message?: string })?.message ?? String(err);
+		}
 	}
 	/** Run a menu action and close the menu. */
 	function act(fn: () => void) {
@@ -666,6 +678,40 @@
 	let panelEl = $state<HTMLDivElement | undefined>();
 	let dragOver = $state(false);
 	let unlistenDrop: (() => void) | undefined;
+	let unlistenEdit: (() => void) | undefined;
+
+	// Files whose local temp copy was just saved in the editor (FT-11), awaiting
+	// the user's confirmation to upload back to the remote. Queued (deduped by
+	// path) so saving several edited files each gets its own prompt.
+	type EditChanged = { id: string; remotePath: string; name: string };
+	let editPrompts = $state<{ remotePath: string; name: string }[]>([]);
+	let editBusy = $state(false);
+
+	function onEditChanged(p: EditChanged) {
+		if (p.id !== sessionId) return;
+		if (editPrompts.some((e) => e.remotePath === p.remotePath)) return;
+		editPrompts = [...editPrompts, { remotePath: p.remotePath, name: p.name }];
+	}
+
+	async function confirmEditUpload() {
+		const p = editPrompts[0];
+		if (!p) return;
+		editBusy = true;
+		errorMsg = undefined;
+		try {
+			await invoke('sftp_edit_upload', { id: sessionId, remotePath: p.remotePath });
+			await list();
+		} catch (err) {
+			errorMsg = (err as { message?: string })?.message ?? String(err);
+		} finally {
+			editBusy = false;
+			editPrompts = editPrompts.slice(1);
+		}
+	}
+
+	function skipEditUpload() {
+		editPrompts = editPrompts.slice(1);
+	}
 
 	function inBounds(pos: { x: number; y: number }): boolean {
 		if (!panelEl) return false;
@@ -678,6 +724,9 @@
 
 	onMount(() => {
 		list();
+		listen<EditChanged>('sftp://edit-changed', (event) => onEditChanged(event.payload)).then(
+			(un) => (unlistenEdit = un)
+		);
 		getCurrentWebview()
 			.onDragDropEvent((event) => {
 				const p = event.payload;
@@ -695,6 +744,7 @@
 	});
 	onDestroy(() => {
 		unlistenDrop?.();
+		unlistenEdit?.();
 		// Tear down a marquee drag if the panel unmounts mid-drag (e.g. reconnect).
 		window.removeEventListener('mousemove', onMarqueeMove);
 		window.removeEventListener('mouseup', endMarquee);
@@ -846,6 +896,9 @@
 		></button>
 		{@const target = menu.entry}
 		<div class="ctx" style="left:{menu.x}px; top:{menu.y}px">
+			{#if !target.is_dir}
+				<button class="ctx-item" onclick={() => act(() => editFile(target))}>✏ {i18n.t('sftp.edit')}</button>
+			{/if}
 			<button class="ctx-item" onclick={() => act(() => download(target))}>⬇ {i18n.t('sftp.download')}</button>
 			<button class="ctx-item" onclick={() => act(() => openChmod(target))}>⚙ {i18n.t('sftp.chmod')}</button>
 			<button class="ctx-item" onclick={() => act(() => startRename(target))}>✎ {i18n.t('sftp.rename')}</button>
@@ -929,6 +982,23 @@
 				<div class="acts">
 					<button class="ghost" onclick={() => (deleteTargets = null)}>{i18n.t('common.cancel')}</button>
 					<button class="danger" onclick={confirmDelete} disabled={busy}>{i18n.t('common.delete')}</button>
+				</div>
+			</div>
+		</div>
+	{/if}
+
+	{#if editPrompts.length}
+		{@const p = editPrompts[0]}
+		<div class="modal-backdrop" role="presentation">
+			<div class="modal">
+				<h3>{i18n.t('sftp.editSavedTitle')}</h3>
+				<p class="sub">{i18n.t('sftp.editSavedPrompt').replace('{name}', p.name)}</p>
+				{#if editPrompts.length > 1}
+					<p class="sub">{i18n.t('sftp.editSavedMore').replace('{n}', String(editPrompts.length - 1))}</p>
+				{/if}
+				<div class="acts">
+					<button class="ghost" onclick={skipEditUpload} disabled={editBusy}>{i18n.t('sftp.skip')}</button>
+					<button onclick={confirmEditUpload} disabled={editBusy}>{i18n.t('sftp.editUpload')}</button>
 				</div>
 			</div>
 		</div>
