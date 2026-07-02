@@ -11,6 +11,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Bastion / ProxyJump (multi-hop) and the remaining per-site overrides.
 - PuTTY session import.
 
+## [0.4.8] - 2026-07-02
+
+### Added
+- **Edit remote files in an external editor (SFTP).** Right-click a file in the
+  SFTP panel and choose *Edit*: AmmaXterm downloads it to a temp copy and opens
+  it in your editor. When you save, it asks whether to upload the change back to
+  the remote — a MobaXterm-style round-trip with an explicit confirm step rather
+  than a silent push. Set the editor under Settings → Connection (blank uses the
+  OS default association; the command may include arguments and a `{file}`
+  placeholder, e.g. `code -w`). Re-editing an open file reuses its copy so
+  unsaved changes are kept, and editing several files queues one prompt each.
+
 ## [0.4.7] - 2026-06-29
 
 ### Fixed
